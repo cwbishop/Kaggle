@@ -1,0 +1,2 @@
+D:\GitHub\Kaggle\P300_Speller\S02\analysis\S02-ERP.erp
+D:\GitHub\Kaggle\P300_Speller\S06\analysis\S06-ERP.erp
