@@ -169,22 +169,33 @@ for s=1:numel(SID)
     
     % ERP [0.5 - 20 Hz] bandpass
     %   Want to see if this wipes out the massive effect as well.
-    erp_0p5to20 = modify_erp_job(erp_unfiltered, [0.5 20]); 
+    erp_0p5to20 = modify_erp_job(erp_unfiltered, [0.5 20]);     
+    
+    erp_0p05to20_extended = modify_erp_job(erp_unfiltered, [0.05 20], [-50 1800]);
+            
+    % Also try an extended epoch duration, but with only a low pass filter.
+    % CWB's notes suggest that high pass filtering might not buy us much
+    % ... and we shouldn't filter unless we have to.
+    erp_0to20_extended = modify_erp_job(erp_unfiltered, [0 20], [-50 1800]); 
     
     %% JOBS
     jobs{end+1} = setup; 
+    jobs{end+1} = erp_0to20_extended;
     jobs{end+1}=erp_unfiltered;  
     jobs{end+1} = erp_1to20; 
     jobs{end+1} = erp_0p05to20;
+    jobs{end+1} = erp_0p05to20_extended;
     jobs{end+1} = erp_0p5to20; 
     
 end % s
 
 %% GROUP COMPARISONS
 jobs{end+1} = make_grand_average('erp_unfiltered'); 
-jobs{end+1} = make_grand_average('erp_filtered_0.05to20');
-jobs{end+1} = make_grand_average('erp_filtered_1to20'); 
-jobs{end+1} = make_grand_average('erp_filtered_0.5to20'); 
+jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
+jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1000'); 
+jobs{end+1} = make_grand_average('erp_filtered_0.5to20_epoched_-50to1000'); 
+jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1000');
+jobs{end+1} = make_grand_average('erp_filtered_0to20_epoched_-50to1800');
 
 % Add to jobs structure
 % jobs{end+1} = group_erp_unfiltered; 
@@ -254,15 +265,21 @@ jobs{end+1} = make_grand_average('erp_filtered_0.5to20');
     end % make_grand_average
 end % 
 
-function job = modify_erp_job(job, corner_frequencies)
+function job = modify_erp_job(job, corner_frequencies, epoch_window)
 %% DESCRIPTION:
 %
 %   Reworks the original ERP job to use a different bandpass filter.
 %   Changes all necessary fields (ERP names, job names, etc.)
 
-% ERP Label
-erp_label = ['filtered_' num2str(corner_frequencies(1)) 'to' num2str(corner_frequencies(2))];
-
+% Use the current epoch_window by default
+if ~exist('epoch_window', 'var')
+    task_index = gab_find_task(job, 'gab_task_erplab_pop_epochbin', 1);
+    epoch_window = job.task{task_index}.args.trange;
+end % if exist('epoch_window', 'var'); 
+    
+% ERP Label    
+erp_label = ['filtered_' num2str(corner_frequencies(1)) 'to' num2str(corner_frequencies(2)) '_epoched_' num2str(epoch_window(1)) 'to' num2str(epoch_window(2))];
+    
 % Change job name
 job.jobName = strrep(job.jobName, 'unfiltered', erp_label);
 
@@ -279,6 +296,12 @@ filter_task =struct(...
             'RemoveDC', 'on', ...
             'Boundary', 'boundary'}}));
 
+% Change epoch settings 
+if exist('epoch_window', 'var')
+    task_index = gab_find_task(job, 'gab_task_erplab_pop_epochbin', 1);
+    job.task{task_index}.args.trange = epoch_window; 
+end % if exist(...
+    
 % Insert filter task
 job = gab_insert_task(job, filter_task, 3); 
 

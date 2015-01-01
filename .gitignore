@@ -240,3 +240,4 @@ pip-log.txt
 *.vmrk
 *.erp
 *.csv
+*.RData
