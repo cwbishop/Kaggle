@@ -83,26 +83,40 @@ EEG.setname = [subject_id '_' session_id];
 %       Perrin, M., Maby, E., Daligault, S., Bertrand, O., & Mattout, J. Objective and subjective evaluation of online error correction during P300-based spelling. Advances in Human-Computer Interaction, 2012, 4.
 
 % Lookup events from labeled event table
-event_table = readtable(opts.event_table);
+%   The event table will only be used for training subjects. No such table
+%   exists for test subjects. 
+if isfield(opts, 'event_table') && ~isempty(opts.event_table)
+    
+    event_table = readtable(opts.event_table);
+    
+    % Find all subject and session specific events.
+    feedback_id = event_table.IdFeedBack;
 
-% Find all subject and session specific events.
-feedback_id = event_table.IdFeedBack;
+    prediction = []; 
+    feedback_number = [];
+    for i=1:numel(feedback_id)
 
-prediction = []; 
-feedback_number = [];
-for i=1:numel(feedback_id)
+        % If it's this subject and this session, include it
+        file_specs = strsplit(feedback_id{i}, '_');
+
+        if isequal(file_specs{1}, subject_id) && isequal(file_specs{2}, session_id)
+
+            % Get the prediction and the feedback_number
+            prediction(end+1,1) = event_table.Prediction(i);
+            feedback_number(end+1,1) = str2double(file_specs{3}(3:end));
+        end % 
+
+    end % for i=1:numel(feedback_id)
     
-    % If it's this subject and this session, include it
-    file_specs = strsplit(feedback_id{i}, '_');
+else
     
-    if isequal(file_specs{1}, subject_id) && isequal(file_specs{2}, session_id)
-        
-        % Get the prediction and the feedback_number
-        prediction(end+1,1) = event_table.Prediction(i);
-        feedback_number(end+1,1) = str2double(file_specs{3}(3:end));
-    end % 
+    % Empty event table. 
+    opts.event_table = ''; 
     
-end % for i=1:numel(feedback_id)
+    % Code unlabeled predictions as a 3
+    prediction = 3.*ones(numel(find(feedback_events)),1);
+    
+end % if isfield
 
 % Sanity checks to make sure the event information is sensible. 
 %   Do we have the correct number of events?
@@ -121,6 +135,11 @@ for i=1:numel(feedback_mask)
         feedback_events(feedback_mask(i)) = 1;
     elseif prediction(i) == 0
         feedback_events(feedback_mask(i)) = 2;
+    else
+        
+        % Maybe this should be the way we're assigning all predictive
+        % variables? Less confusing?
+        feedback_events(feedback_mask(i)) = prediction(i); 
     end % if prediction ...
     
 end % for i=1:numel(feedback_mask)

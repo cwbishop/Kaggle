@@ -42,8 +42,6 @@ for s=1:numel(SID)
             'subject_id', {{sid}})); 
         
     %% ERP JOB
-     
-    
     % Create the job
     erp_unfiltered=gab_emptyjob;
     erp_unfiltered.jobName='erp_unfiltered';
@@ -142,7 +140,7 @@ for s=1:numel(SID)
     erp_unfiltered.task{end+1} = struct(...
         'func', @gab_task_erplab_pop_binoperator, ...
         'args', struct(...
-            'formulas', fullfile(studyDir, '..', 'code', 'P300_speller_binops.txt')));
+            'formulas', fullfile(studyDir, '..', 'code', 'p300_speller_binops.txt')));
         
     % Save ERP        
     erp_unfiltered.task{end+1}=struct(...
@@ -180,22 +178,22 @@ for s=1:numel(SID)
     
     %% JOBS
     jobs{end+1} = setup; 
-    jobs{end+1} = erp_0to20_extended;
+%     jobs{end+1} = erp_0to20_extended;
     jobs{end+1}=erp_unfiltered;  
-    jobs{end+1} = erp_1to20; 
-    jobs{end+1} = erp_0p05to20;
+%     jobs{end+1} = erp_1to20; 
+%     jobs{end+1} = erp_0p05to20;
     jobs{end+1} = erp_0p05to20_extended;
-    jobs{end+1} = erp_0p5to20; 
+%     jobs{end+1} = erp_0p5to20; 
     
 end % s
 
 %% GROUP COMPARISONS
 jobs{end+1} = make_grand_average('erp_unfiltered'); 
 jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
-jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1000'); 
-jobs{end+1} = make_grand_average('erp_filtered_0.5to20_epoched_-50to1000'); 
-jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1000');
-jobs{end+1} = make_grand_average('erp_filtered_0to20_epoched_-50to1800');
+% jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1000'); 
+% jobs{end+1} = make_grand_average('erp_filtered_0.5to20_epoched_-50to1000'); 
+% jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1000');
+% jobs{end+1} = make_grand_average('erp_filtered_0to20_epoched_-50to1800');
 
 % Add to jobs structure
 % jobs{end+1} = group_erp_unfiltered; 

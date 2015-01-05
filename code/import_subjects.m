@@ -27,10 +27,12 @@ function import_subjects(subject_id, varargin)
 % Get user parameters
 opts = varargin2struct(varargin{:}); 
 
+training_subjects = {'S02' 'S06' 'S07' 'S11' 'S12' 'S13' 'S14' 'S16' 'S17' 'S18' 'S20' 'S21' 'S22' 'S23' 'S24' 'S26'};
+test_subjects = {'S01' 'S03' 'S04' 'S05' 'S08' 'S09' 'S10' 'S15' 'S19' 'S25'};
+
 % Study directory
 study_directory = 'D:\GitHub\Kaggle\P300_Speller'; 
 channel_locations = fullfile(study_directory, 'ChannelsLocation.loc');
-event_table = fullfile(study_directory, 'TrainLabels.csv');
 
 % Session numbers
 %   There are 5 sessions in this paradigm 
@@ -40,6 +42,19 @@ session_labels = {'Sess01', 'Sess02', 'Sess03', 'Sess04', 'Sess05'};
 %   We'll mimic CWB's typical project data structure to facilitate data
 %   processing and code development.
 for s=1:numel(subject_id)
+    
+    % We have to pass an empty event_table for test set subjects since we
+    % don't have that information (it's a test, remember?) 
+    if ismember(subject_id{s}, training_subjects)
+        
+        % Event table will be empty for test subjects
+        event_table = fullfile(study_directory, 'TrainLabels.csv');
+        
+    elseif ismember(subject_id{s}, test_subjects)
+        event_table = '';
+    else
+        error([subject_id{s} ' did not match the training or test subjects listed here. Something weird happening'])        
+    end % if ismember
     
     % Make subject directory
     subject_directory = fullfile(study_directory, subject_id{s}); 
