@@ -258,8 +258,8 @@ classify.pcc <- function(data.train, data.test, cross_validate = TRUE){
     #   These data are used as the templates to which single-trial sweeps are compared.
     #   We have a template for correct and incorrect feedback events.
     erp.train <- make.erp(data.train)
-    erp.correct <- erp.train$erp_correct
-    erp.incorrect <- erp.train$erp_incorrect
+    erp.correct <- t(erp.train$erp_correct)
+    erp.incorrect <- t(erp.train$erp_incorrect)
     
     # Concatenate channels
     #   Doing this will force templates to match the spatio-temporal samples of the individual sweeps below. 
@@ -301,20 +301,136 @@ Returns a list with these fields. For formulas and discussion, see:
 
 Margaux, P., et al. (2012). Objective and Subjective Evaluation of Online Error Correction during P300-Based Spelling. Advances in Human-Computer Interaction 2012: 13.
 
+labels and predictions must be NxS matrices, where N is the number of observations (sweeps) and S is the number of subjects
+
+Will return a list containing 1xS measures of accuracy, sensitivity, and specificity.
+
 "
-eval_classifier <- function(class_labels, predictions){
+classifier.eval <- function(labels, predictions){
     
-    # Initialize return variable
-    performance <- list(); 
+    # Initialize return variables
+    accuracy <- matrix(nrow=1, ncol=dim(labels)[2])
+    specificity <- matrix(nrow=1, ncol=dim(labels)[2])
+    sensitivity <- matrix(nrow=1, ncol=dim(labels)[2])
     
-    # A positive case will be when the feedback is INCORRECT. This might get
-    # confusing.    
-    mask_positive = class_labels == 2; # incorrect feedback
-    mask_negative = class_labels == 1; # correct feedback
-    
-    # Calculate number of true_positives, false_positives, true_negatives, and false_negatives
-    true_positives = length(class_labels[mask_positive] == predictions[mask_positive])
-    
-    return(performance)
+    # Loop through all subjects
+    for(i in 1:dim(labels)[2]){
+        # A positive case will be when the feedback is INCORRECT. This might get
+        # confusing.    
+        mask_positive = labels[,i] == 2; # incorrect feedback
+        mask_negative = labels[,i] == 1; # correct feedback
+        
+        # Calculate number of true_positives, false_positives, true_negatives, and false_negatives
+        true_positives = length(which(labels[mask_positive,i] == predictions[mask_positive,i]))
+        true_negatives = length(which(labels[mask_negative,i] == predictions[mask_negative,i]))
+        
+        false_positives = length(which(predictions[mask_positive,i] != labels[mask_positive,i] ))
+        false_negatives = length(which(predictions[mask_negative,i] != labels[mask_negative,i] ))
+        
+        # Accuracy
+        accuracy[i] <- (true_positives + true_negatives)/(true_positives + true_negatives + false_positives + false_negatives)
+        
+        # Sensitivity
+        sensitivity[i] <- (true_positives)/(true_positives + false_negatives)
+        
+        # Specificity
+        specificity[i] <- (true_negatives)/(true_negatives + false_positives)
+        
+    }
+        
+    return(list("accuracy" = accuracy, "sensitivity" = sensitivity, "specificity" = specificity))
     
 }
+
+"
+This function builds submissions from prediction data. 
+
+At the moment, this makes a lot of super stupid assumptions about the data layout. Needs to be made much smarter before it will be usable. 
+"
+submission.csv <- function(predictions, template = "D:/GitHub/Kaggle/P300_Speller/SampleSubmission.csv", filename){
+    
+    # Read in the template file
+    template <- read.csv(template)
+    
+    
+    # Do stuff with template
+    for(i in 1:dim(predictions)[2]){
+        
+        if(i == 1){
+            vpred <- as.matrix(predictions[,i])
+        }
+        else{
+            vpred <- rbind(vpred, as.matrix(predictions[,i]))
+        }
+        
+    }
+    
+    # Overwrite data in prediction column
+    template$Prediction <- as.numeric(!(vpred - 1))
+    
+    # Write to file
+    write.csv(template, file = filename, row.names = FALSE)
+}
+"
+This function performs a leave-one out maximum likelihood classification based 
+on the Pearson's correlation coefficient. 
+
+This was originally written for use with spatio-temporal brain data (that is, 
+ERPs), but should scale to time-frequency representations without issue, 
+provided the scale is linear (or log transformed to BE linear in the case of power)
+"
+
+# classify.pcc <- function(group_data){
+#     
+#     percentage_correct = numeric()
+#     for(i in 1:length(group_data)){
+#         
+#         # Test data
+#         #   We'll test each sweep individually.
+#         test_data <- group_data[[i]]        
+#         
+#         # Template data to which 
+#         template_data <- group_data[1:length(group_data) != i]
+#         
+#         # Compute group ERP
+#         erp <- make.erp(template_data)
+#         
+#         # Assign to easier to use variables
+#         erp_correct <- t(erp$erp_correct)
+#         erp_incorrect <- t(erp$erp_incorrect)
+#         
+#         # Reshape to concatenate channels
+#         erp_dims <- dim(erp$erp_correct)
+#         dim(erp_correct) <- c(erp_dims[1] * erp_dims[2], 1)
+#         dim(erp_incorrect) <- c(erp_dims[1] * erp_dims[2], 1)        
+#         
+#         # Now, classify each sweep based on PCC        
+#         n_correct = 0
+#         for(t in 1:dim(test_data$sweeps)[1]){
+#             
+#             # Get the sweep
+#             sweep <- test_data$sweeps[t,]
+#             
+#             # class_label
+#             class_label <- test_data$class_labels[t]
+#             # Compute correlation with correct/incorrect erp
+#             pcc <- (c( cor(x=sweep, y=erp_correct), cor(x=sweep, y=erp_incorrect)))
+#             
+#             # Class based on max
+#             #   Take absolute value because negative correlations are fine. 
+#             prediction <- which.max(pcc)
+#             
+#             if(prediction == class_label){
+#                 n_correct = n_correct + 1
+#             }
+#         }
+#         
+#         # Compute % correct
+#         
+#         percentage_correct[i] = (n_correct / t)*100
+#         
+#     }
+#     
+#     # Return performance
+#     return(percentage_correct)
+# }

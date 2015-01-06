@@ -1,0 +1,103 @@
+---
+title: "p300_speller"
+author: "Christopher W Bishop"
+date: "Thursday, January 01, 2015"
+output: html_document
+---
+
+This is a Markdown document for the P300 speller competition hosted on Kaggle (<http://www.kaggle.com/c/inria-bci-challenge>).
+
+Data Preprocessing
+----------------
+
+Electroencephalography data were processed primarily in MATLAB 2013b using EEGlab v12.0.2.5b and ERPLAB 4.0.3.1. Below is a summary of the data processing steps.
+
+1. Data were band pass filtered from 0.05 - 20 Hz using a 4th order IIR (Butter).    
+    + The low pass cutoff (20 Hz) was used to remove prominent, high-amplitude noise at ~50 Hz. 
+    + 0.05 Hz high pass was used to remove low-frequency drifts, but had little practical effect on the time series.
+
+2. Feedback events were used as event triggers and data were epoched (segmented) about each feedback event for -50 ms to 1800 ms. 
+
+3. Each data epoch was then baseline corrected using the pre-feedback baseline.
+
+4. Feedback events were sorted by whether they were correct or incorrect. 
+
+5. 340 sweeps per subject were exported for further analysis in R (see below)
+
+Set Working Directory, Libraries, and Constants
+----------------
+```{r}
+setwd("D:/GitHub/Kaggle/code")
+source('D:/GitHub/Kaggle/code/p300_speller.R')
+```
+
+Loading the Data
+----------------
+
+Data were converted from CSV to RData format using import_eeg.csv. All subsequent data analysis will use the RData files.
+
+The code below loads the RData files and generates group ERPs for the training and test sets.
+
+```{r}
+data.train <- import_eeg.rdata(subjects.train, erp_label)
+data.test <- import_eeg.rdata(subjects.test, erp_label)
+
+erp.train <- make.erp(data.train)
+erp.test <- make.erp(data.test)
+```
+
+A First Look athe Data
+----------------
+
+ERPLAB was used to do most of the data visualization, but below is a cursory summary of observations.
+
+1. Filtering can have a significant impact on the discriminability between correct and incorrect feedback events
+    + The original paper describing this work used a 1 - 20 Hz band pass filter. This removes what is clearly the most discriminable feature of the set: a huge difference from ~500 - 1600 ms. 
+
+2. There are three potentially useful gross features in the ERP spatiotemporal waveforms that can be used to distinguish between correct and incorrect feedback events.
+    + A difference between ~220 and 320 ms. This is approximately equivalent to the "Neg-ErrP" described in the seminal paper.
+    + A difference between ~320 and 440 ms. This is approximately equivalent to the "Pos-ErrP" described in the seminal paper
+    + A large, sustained difference from ~440 - 1600 ms over virtually all electrode sites
+        + The distributed topography is likely due to the nose reference. 
+        
+Here is a brief look at these differences at Cz (Electrode 29). Cz was selected to ease comparisons with the seminal paper, although the reader should recall that the filters differ substantially and thus the time waveforms may look very different.
+
+```{r}
+plot(erp.train$time_stamps, erp.train$erp_incorrect[29,], col = 'red', lwd = 2, type = 'l')
+lines(erp.train$time_stamps, erp.train$erp_correct[29,], col = 'black', lwd = 2)
+```
+
+Pearson's Correlation Coefficient
+----------------
+
+Considering the striking difference in spatio-temporal pattern between correct and incorrect feedback events, I thought it worthwhile to use perhaps the simplest classifier imaginable on the data to start. My hope was to verify that what is reflected in the group-level ERPs is in fact useful for predicting single-trial sweeps for a single subject.
+
+So, I started with Pearson's Correlation Coefficient (PCC) of the spatio-temporal data.
+
+To verify that the (super simple) classifier is doing what it's intended to do (or at least approximately so), I ran a leave-one-out analysis on the training set. 
+
+```{r}
+
+
+pcc.results <- classify.pcc(data.train, data.test)
+pcc.eval <- classifier.eval(pcc.results$label.cross_val, pcc.results$prediction.cross_val)
+
+# Accuracy plot
+data2plot <- as.data.frame(cbind((subjects.train), t(pcc.eval$accuracy)))
+names(data2plot) <- c("subject", "accuracy")
+ggplot(data2plot, aes(subject, accuracy)) + geom_point(size = 5)
+summary(t(pcc.eval$accuracy))
+
+# Sensitivity plot
+data2plot <- as.data.frame(cbind((subjects.train), t(pcc.eval$sensitivity)))
+names(data2plot) <- c("subject", "sensitivity")
+ggplot(data2plot, aes(subject, sensitivity)) + geom_point(size = 5)
+summary(t(pcc.eval$sensitivity))
+
+# Specificity plot
+data2plot <- as.data.frame(cbind((subjects.train), t(pcc.eval$specificity)))
+names(data2plot) <- c("subject", "specificity")
+ggplot(data2plot, aes(subject, specificity)) + geom_point(size = 5)
+summary(t(pcc.eval$specificity))
+```
+
