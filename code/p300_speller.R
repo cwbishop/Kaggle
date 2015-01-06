@@ -170,9 +170,17 @@ make.erp <- function(group_data){
         
         # Need a way to test for conditional existence of these fields. Not all 
         # subjects will have all ERP types (recall that test subjects only have erp_unknown)
-        erp_correct = erp_correct + group_data[[i]]$erp_correct
-        erp_incorrect = erp_incorrect + group_data[[i]]$erp_incorrect        
-        erp_unknown = erp_unknown + group_data[[i]]$erp_unknown
+        if(class(group_data[[i]]$erp_correct) != "NULL"){
+            erp_correct = erp_correct + group_data[[i]]$erp_correct    
+        }
+        
+        if(class(group_data[[i]]$erp_incorrect) != "NULL"){
+            erp_incorrect = erp_incorrect + group_data[[i]]$erp_incorrect    
+        }
+        
+        if(class(group_data[[i]]$erp_unknown) != "NULL"){
+            erp_unknown = erp_unknown + group_data[[i]]$erp_unknown    
+        }        
         
     }
     
@@ -208,68 +216,81 @@ evaluate_train: Returns predictions from training set using an N-1 analysis.
 evaluate_test: returns predictions from the test set using the training set as a 
 template.
 "
-classify.pcc <- function(data.train, data.test, evaluate_train = TRUE, evaluate_test = TRUE){
-    
+classify.pcc <- function(data.train, data.test, cross_validate = TRUE){
+     
     # Initialize prediction variables
-    prediction.test <- matrix()
-    prediction.train <- matrix()
+    prediction.test <- matrix(nrow=dim(data.test[[1]]$sweeps)[1], ncol = length(data.test))
+    prediction.cross_val <- matrix(nrow=dim(data.train[[1]]$sweeps)[1], ncol = length(data.train))
     
-    # Evaluate training set?
-    #   To do this, we'll call classify.pcc recursively
+    # Initialize label variables
+    #   Massaging these into a similar format will make scoring much easier later.
+    label.test <- matrix(nrow = dim(prediction.test)[1], ncol = dim(prediction.test)[2])
+    label.cross_val <- matrix(nrow = dim(prediction.cross_val)[1], ncol = dim(prediction.cross_val)[2])
+    
+    # Run cross-validation?
+    #   The cross-validation procedure uses an N-1 procedure to validate the performance of the algorithm.
+    if(cross_validate){
+        
+        for(i in 1:length(data.train)){
+            
+            # Use one subject as the cross-validation set
+            cv.test <- data.train[i]
+            
+            # Use all remaining subjects as the training set
+            cv.train <- data.train[1:length(data.train) != i]
+            
+            # Sommersault
+            cv.pred <- classify.pcc(cv.train, cv.test, cross_validate = FALSE)
+            
+            # Assign to return variables
+            prediction.cross_val[,i] <- cv.pred$prediction.test
+            label.cross_val[,i] <- cv.test[[1]]$class_labels
+            
+        } # for(i in ...)
+        
+    } # if(cross_validate)
     
     
     # Prediction matrix will be used to evaluate classifier
-    prediction <- matrix()
+    #prediction <- matrix()
     
-    for(i in 1:length(group_data)){        
-        
-        # Test data
-        #   We'll test each sweep individually.
-        test_data <- group_data[[i]]        
-        
-        # Template data to which 
-        template_data <- group_data[1:length(group_data) != i]
-        
-        # Compute group ERP
-        erp <- make.erp(template_data)
-        
-        # Assign to easier to use variables
-        erp_correct <- t(erp$erp_correct)
-        erp_incorrect <- t(erp$erp_incorrect)
-        
-        # Reshape to concatenate channels
-        erp_dims <- dim(erp$erp_correct)
-        dim(erp_correct) <- c(erp_dims[1] * erp_dims[2], 1)
-        dim(erp_incorrect) <- c(erp_dims[1] * erp_dims[2], 1)        
-        
-        # Now, classify each sweep based on PCC        
-        n_correct = 0
-        
-        for(t in 1:dim(test_data$sweeps)[1]){
-            
-            # Get the sweep
-            sweep <- test_data$sweeps[t,]
-            
-            # class_label
-            class_label <- test_data$class_labels[t]
-            
-            # Compute correlation with correct/incorrect erp            
-            pcc <- (c( cor(x=sweep, y=erp_correct), cor(x=sweep, y=erp_incorrect)))
-            
-            # Class based on max
-            #   We want to pick the most positive correlation since we are looking
-            #   only for positively correlated data. 
-            #
-            #   taking absolute value of pcc leads to a 3.8% reduction in 
-            #   performance            
-            prediction[i, t] <- which.max(pcc)
-            
-        }
-                
-    }
+    # Compute the template data. 
+    #   These data are used as the templates to which single-trial sweeps are compared.
+    #   We have a template for correct and incorrect feedback events.
+    erp.train <- make.erp(data.train)
+    erp.correct <- erp.train$erp_correct
+    erp.incorrect <- erp.train$erp_incorrect
     
-    # Return performance
-    return(performance)
+    # Concatenate channels
+    #   Doing this will force templates to match the spatio-temporal samples of the individual sweeps below. 
+    erp.dims <- dim(erp.correct)
+    dim(erp.correct) <- c(erp.dims[1] * erp.dims[2], 1)
+    dim(erp.incorrect) <- c(erp.dims[1] * erp.dims[2], 1)   
+    
+    for(i in 1:length(data.test)){
+        
+        for(t in 1:dim(data.test[[i]]$sweeps)[1]){
+            
+            # Make single-sweep prediction
+            sweep <- data.test[[i]]$sweeps[t,]
+            class.label <- data.test[[i]]$class_labels[t]
+            
+            # Compute PCC against each template (correct/incorrect feedback)            
+            pcc <- (c( cor(x = sweep, y=erp.correct), cor(x = sweep, y = erp.incorrect)))
+            
+            # Make prediction
+            prediction.test[t,i] <- which.max(pcc)
+            
+        } # for(t in 1:dim ...)
+        
+        # Assign class labels
+        label.test[,i] <- data.test[[i]]$class_labels
+        
+    } # for(i in 1:length(data.test))
+    
+    # Return predictions for cross validation and test sets. 
+    return(list("prediction.test" = prediction.test, "prediction.cross_val" = prediction.cross_val, "label.test" = label.test, "label.cross_val" = label.cross_val))
+    
 }
 
 "
