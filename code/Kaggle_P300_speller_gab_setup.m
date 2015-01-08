@@ -198,6 +198,40 @@ jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
 % Add to jobs structure
 % jobs{end+1} = group_erp_unfiltered; 
 
+% CWB wants to do some data cleaning to estimate the time course of eye
+% blinks and other noise sources based on a group average ICA
+% decomposition. To do this, let's concatenate all the training subject
+% data sets into one big data set, then do ICA. Let's see if we can pick
+% out "typical" eye blink and other noise components that we can remove
+% from the data.
+erp_label = 'erp_filtered_0.05to20_epoched_-50to1800';
+dataset_files = {};
+for j = 1:numel(jobs)
+
+    % We only want to include the training subjects in this concatenated
+    % set.
+    warning('Including test subjects'); 
+    if isequal(jobs{j}.jobName, erp_label)
+        
+        % Find the dataset name
+        saveset_index = gab_find_task(jobs{j}, 'gab_task_eeglab_saveset', 1);
+        opts = varargin2struct(jobs{j}.task{saveset_index}.args.params{:}); 
+        dataset_files{end+1} = fullfile(opts.filepath, opts.filename); 
+    end %
+
+end % for i=1:numel(jobs)
+   
+% Setup a group job to load all data sets, merge them, write the data set.
+
+% Then write a job to load that data set and run ICA on it to estimate the
+% demixing (mixing?) matrix.
+sid = 'group';
+subDir = fullfile(studyDir, sid);
+job = gab_emptyjob; 
+job.jobName = ['group_concat_train']; 
+job.jobDir = fullfile(subDir, 'jobs'); 
+job.parent = '';
+
     function job = make_grand_average(erp_label)
     %% DESCRIPTION:
     %
