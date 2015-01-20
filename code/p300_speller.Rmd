@@ -65,7 +65,12 @@ Here is a brief look at these differences at Cz (Electrode 29). Cz was selected 
 ```{r}
 plot(erp.train$time_stamps, erp.train$erp_incorrect[29,], col = 'red', lwd = 2, type = 'l')
 lines(erp.train$time_stamps, erp.train$erp_correct[29,], col = 'black', lwd = 2)
+lines(erp.train$time_stamps, erp.train$erp_incorrect[29,] - erp.train$erp_correct[29,], col = 'blue', lwd = 2)
 ```
+
+Notice that there are three distinct time periods during which differences can be seen across (almost) all electrodes. The largest difference appears to also be the latest.
+
+Let's take a first pass at the data using a simple, binary classifier.
 
 Pearson's Correlation Coefficient
 ----------------
@@ -83,21 +88,87 @@ pcc.results <- classify.pcc(data.train, data.test)
 pcc.eval <- classifier.eval(pcc.results$label.cross_val, pcc.results$prediction.cross_val)
 
 # Accuracy plot
-data2plot <- as.data.frame(cbind((subjects.train), t(pcc.eval$accuracy)))
+data2plot <- as.data.frame(cbind((subjects.train), (pcc.eval$accuracy)))
 names(data2plot) <- c("subject", "accuracy")
 ggplot(data2plot, aes(subject, accuracy)) + geom_point(size = 5)
 summary(t(pcc.eval$accuracy))
 
 # Sensitivity plot
-data2plot <- as.data.frame(cbind((subjects.train), t(pcc.eval$sensitivity)))
+data2plot <- as.data.frame(cbind((subjects.train), (pcc.eval$sensitivity)))
 names(data2plot) <- c("subject", "sensitivity")
 ggplot(data2plot, aes(subject, sensitivity)) + geom_point(size = 5)
 summary(t(pcc.eval$sensitivity))
 
 # Specificity plot
-data2plot <- as.data.frame(cbind((subjects.train), t(pcc.eval$specificity)))
+data2plot <- as.data.frame(cbind((subjects.train), (pcc.eval$specificity)))
 names(data2plot) <- c("subject", "specificity")
 ggplot(data2plot, aes(subject, specificity)) + geom_point(size = 5)
 summary(t(pcc.eval$specificity))
 ```
+Notice that the (ultra simple) classifier does "OK" for some subjects (some accuracy as high as 64%), but definitely not for all subjects. 
+
+CWB wondered what's so different about the poor performing subjects? Let's look at the lowest and highest performing subjects in the training set (cross-validation data).
+
+```{r}
+
+# First, calculate the difference wave since this is an informative and concise metric.
+erp.difference <- matrix(nrow = length(data.train), ncol = length(data.train[[1]]$erp_correct))
+for(i in 1:length(data.train)){
+    erp.difference[i,] <- data.train[[i]]$erp_incorrect - data.train[[i]]$erp_correct
+}
+
+# Best performer (S24)
+subjects.train[which.max(pcc.eval$accuracy)]
+
+# Worst performer (S12)
+subjects.train[which.min(pcc.eval$accuracy)]
+
+# Get plot data
+data2plot <- data.frame(data.train[[1]]$time_stamps, colMeans(erp.difference), erp.difference[which.max(pcc.eval$accuracy),], erp.difference[which.min(pcc.eval$accuracy),])
+
+# Assign names
+names(data2plot) <- c("time_ms", "Average", "Best", "Worst")
+
+# Create a new plot with this information
+gg <- ggplot(data2plot, aes(x = time_ms, y = Average)) + geom_point(colour = 'black', size = 2) + geom_point(aes(x = time_ms, y = Best), colour = 'green') + geom_point(aes(x = time_ms, y = Worst), colour = 'red')
+```
+
+Notice that the best performer's difference wave looks a heck of a lot like the group difference wave. In contrast, the poorest performer's difference wave actually has the sign REVERSED compared to the group average. If we could predict the sign of the difference wave, our performance would impprove substantially, I suspect.
+
+How do we go about predicting the sign of the difference wave? This is relatively easy for the labeled data - we can just test for it explicitly. It would be much more difficult in the test set (unlabeled). Perhaps we can leverage the fact that the feedback is correct a majority of the time for most subjects? If we use an unsupervised clustering algorithm (e.g., K-means) to determine how many sweeps cluster into each category, then label the cluster with the most sweeps as "correct", we should be able to predict the sign of the difference wave with some level of certainty. 
+
+If a more complex, unsupervised classification scheme cannot deal with the sign differences, then we'll likely need to focus in on more reliable information. CWB took a look at the same data, but with a 1 Hz high-pass filter and noted that the responses seemed to be much more consistent between s12, s24, and the group average. Perhaps removing the low-frequency information is a reasonable way to go? We could try it and run it through the same PCC-like classifier. 
+
+Additionally, we could downsample the data and use a more flexible classifier, like logistic regression with a variable decision boundary. That's where CWB would like to go next, he thinks. 
+
+1 to 20 Hz Bandpass Filter
+-------
+
+Let's take a look at a similar data set that has been bandpass filtered from 1 to 20 Hz. The high pass filter was used to filter out some of the low-frequency drift that (apparently) is not terribly reliable across subjects. 
+
+For starters, let's try running the same PCC based classifier, but with the different filter settings. This will give me a chance to do a head to head comparison while just changing the filter order. Perhaps the classifier will work better without the low frequency information. 
+
+```{r}
+
+# Change the ERP Label to match the newly filtered data set. 
+erp_label <- '-erp_filtered_1to20_epoched_-50to1800'
+
+# Load the training data
+data.test <- data.test <- import_eeg.rdata(subjects.test, erp_label)
+
+# Create a group ERP
+
+```
+
+Feature Filtering
+--------
+
+Since we know the spatio-temporal pattern has *some* useful information in it, we may be able to improve performance by limiting our correlations to time frames during which there is a statistically significant difference (that is, a consistent difference) between correct and incorrect feedback trials.
+
+One approach to limiting the test space is to filter our spatiotemporal features with something like a t-test. Below, we attempt to do exactly that
+
+Let's first gather the difference wave (erp_incorrect - erp_correct) into a useful variable. Each row is a subject, each column is a spatiotemporal data point.
+
+The t-test filtering was largely unhelpful with the 0.05 to 20 Hz bandpass filtered data. So I won't bother to show the results here. 
+
 

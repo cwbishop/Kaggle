@@ -18,6 +18,22 @@ erp_label <- '-erp_filtered_0.05to20_epoched_-50to1800'
 subjects.train = c('S02', 'S06', 'S07', 'S11', 'S12', 'S13', 'S14', 'S16', 'S17', 'S18', 'S20', 'S21', 'S22', 'S23', 'S24', 'S26')
 subjects.test = c('S01', 'S03', 'S04', 'S05', 'S08', 'S09', 'S10', 'S15', 'S19', 'S25')
 
+import_eeg.csv.group <- function(subjects){
+    "
+    Function to convert subject CSV files into RData files. This is essentially a wrapper for import_eeg.csv.
+
+    subjects: list of subject IDs
+    "
+    for(subject in subjects){
+        
+        # Name of CSV file for this subject
+        file_name <- paste(getwd(), '..', 'P300_Speller', subject, 'analysis', paste0(subject, erp_label, '.csv'), sep = .Platform$file.sep)
+        
+        # Call import function
+        import_eeg.csv(file_name, save_as_robj = TRUE)
+    }
+}
+
 import_eeg.csv <- function(file_name, save_as_robj = TRUE){
         
         "
@@ -116,6 +132,24 @@ import_eeg.csv <- function(file_name, save_as_robj = TRUE){
 }
 
 "
+bychan2row changes a channel x time matrix to a 1 x (channel x time) matrix.
+
+This proved useful when converting channel x time erps to by row sweeps
+"
+erpbychan2row <- function(data){
+    
+    # Only do this if the data are valid.
+    if(class(data) != "NULL"){
+        # Get dimensions so we can resize the data properly
+        data <- t(data)
+        dim(data) <- c(1, dim(data)[1]*dim(data)[2])
+    }
+    
+    
+    return(data)
+}
+
+"
 Import group data and sort it into a list
 
 "
@@ -133,6 +167,13 @@ import_eeg.rdata <- function(subjects, erp_label){
         # Load the RData
         load(input_file)
         
+        # Redo ERP calculations to reflect whatever format we currently what them in. Call make.erp to do this.
+        data$erp_correct = erpbychan2row(data$erp_correct)
+        data$erp_incorrect = erpbychan2row(data$erp_incorrect)
+        data$erp_unknown = erpbychan2row(data$erp_unknown)
+        
+        # Extend time stamps
+        
         # Assign to return list        
         group_data[[length(group_data) + 1]] <- data
         
@@ -140,6 +181,10 @@ import_eeg.rdata <- function(subjects, erp_label){
     
     return(group_data)
 }
+
+"
+Apply t-test filter to difference wave
+"
 
 
 "
@@ -309,9 +354,9 @@ Will return a list containing 1xS measures of accuracy, sensitivity, and specifi
 classifier.eval <- function(labels, predictions){
     
     # Initialize return variables
-    accuracy <- matrix(nrow=1, ncol=dim(labels)[2])
-    specificity <- matrix(nrow=1, ncol=dim(labels)[2])
-    sensitivity <- matrix(nrow=1, ncol=dim(labels)[2])
+    accuracy <- matrix(ncol=1, nrow=dim(labels)[2])
+    specificity <- matrix(ncol=1, nrow=dim(labels)[2])
+    sensitivity <- matrix(ncol=1, nrow=dim(labels)[2])
     
     # Loop through all subjects
     for(i in 1:dim(labels)[2]){
@@ -371,6 +416,19 @@ submission.csv <- function(predictions, template = "D:/GitHub/Kaggle/P300_Spelle
     # Write to file
     write.csv(template, file = filename, row.names = FALSE)
 }
+
+"
+Create a logical mask for a data frame.
+
+Accepts key/value pairs, where 
+
+"
+mask.df <- function(dframe, ...){
+    
+    
+}
+
+
 "
 This function performs a leave-one out maximum likelihood classification based 
 on the Pearson's correlation coefficient. 

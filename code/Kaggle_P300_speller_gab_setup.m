@@ -20,6 +20,9 @@ studyDir=['D:\GitHub\Kaggle\' EXPID filesep];
 
 jobs={};
 
+dataset_path = {};
+dataset_filename = {};
+
 %% CREATE JOBS FOR EACH SUBJECT
 for s=1:numel(SID)
     
@@ -176,20 +179,55 @@ for s=1:numel(SID)
     % ... and we shouldn't filter unless we have to.
     erp_0to20_extended = modify_erp_job(erp_unfiltered, [0 20], [-50 1800]); 
     
+    % Also try a 1 - 20 Hz filter to remove the low-frequency information.
+    % CWB discovered that the low-frequency information is not *consistent*
+    % across individuals. It's absolutely informative for many if not most
+    % subjects, but the sign of the difference wave changes.
+    erp_1to20_extended = modify_erp_job(erp_unfiltered, [1 20], [-50 1800]); 
+    
+    % Also try a 1 - 8 Hz bandpass filter. This removes some of the high
+    % frequency noise while (I think) maintaining much of the information
+    % in the difference wave.
+    erp_1to8_extended = modify_erp_job(erp_unfiltered, [1 8], [-50 1800]); 
+    
+    % CWB wants to do some data cleaning to estimate the time course of eye
+    % blinks and other noise sources based on a group average ICA
+    % decomposition. To do this, let's concatenate all the training subject
+    % data sets into one big data set, then do ICA. Let's see if we can pick
+    % out "typical" eye blink and other noise components that we can remove
+    % from the data.
+    %
+    % For now, just append the raw data sets, refilter it, then run ICA. If we
+    % use the saved data sets from ERPLAB, merging fails because urevents has
+    % been removed. SO annoying!
+    %
+    % Let's look at the 1 - 20 Hz filtered data since we know we need to remove
+    % the line noise and low-frequency drift (for now). 
+    if ismember(sid, training_subjects)
+        
+        dataset_path{end+1} = fullfile(subDir, 'eeg');
+        dataset_filename{end+1} = fullfile([sid '.set']); 
+        
+    end % 
+    
     %% JOBS
-    jobs{end+1} = setup; 
+%     jobs{end+1} = setup; 
 %     jobs{end+1} = erp_0to20_extended;
-    jobs{end+1}=erp_unfiltered;  
+%     jobs{end+1}=erp_unfiltered;  
 %     jobs{end+1} = erp_1to20; 
 %     jobs{end+1} = erp_0p05to20;
-    jobs{end+1} = erp_0p05to20_extended;
+%     jobs{end+1} = erp_0p05to20_extended;
+    jobs{end+1} = erp_1to20_extended;
+    jobs{end+1} = erp_1to8_extended;
 %     jobs{end+1} = erp_0p5to20; 
     
 end % s
 
 %% GROUP COMPARISONS
-jobs{end+1} = make_grand_average('erp_unfiltered'); 
-jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
+% jobs{end+1} = make_grand_average('erp_unfiltered'); 
+% jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
+jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1800');
+jobs{end+1} = make_grand_average('erp_filtered_1to8_epoched_-50to1800');
 % jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1000'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.5to20_epoched_-50to1000'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1000');
@@ -198,28 +236,35 @@ jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
 % Add to jobs structure
 % jobs{end+1} = group_erp_unfiltered; 
 
-% CWB wants to do some data cleaning to estimate the time course of eye
-% blinks and other noise sources based on a group average ICA
-% decomposition. To do this, let's concatenate all the training subject
-% data sets into one big data set, then do ICA. Let's see if we can pick
-% out "typical" eye blink and other noise components that we can remove
-% from the data.
-erp_label = 'erp_filtered_0.05to20_epoched_-50to1800';
-dataset_files = {};
-for j = 1:numel(jobs)
 
-    % We only want to include the training subjects in this concatenated
-    % set.
-    warning('Including test subjects'); 
-    if isequal(jobs{j}.jobName, erp_label)
-        
-        % Find the dataset name
-        saveset_index = gab_find_task(jobs{j}, 'gab_task_eeglab_saveset', 1);
-        opts = varargin2struct(jobs{j}.task{saveset_index}.args.params{:}); 
-        dataset_files{end+1} = fullfile(opts.filepath, opts.filename); 
-    end %
-
-end % for i=1:numel(jobs)
+% erp_label = 'erp_filtered_1to20_epoched_-50to1800';
+% dataset_path = {};
+% dataset_filename = {};
+% for j = 1:numel(jobs)
+% 
+%     % We only want to include the training subjects in this concatenated
+%     % set.
+%        
+%     % Get the subject ID from the job directory
+%     sid_by_jobDir = jobs{j}.jobDir;
+%     sid_by_jobDir = strsplit(strrep(sid_by_jobDir, studyDir, ''), filesep);
+%     sid_by_jobDir = sid_by_jobDir{1};
+%     % Remove study directory
+%     
+%     if isequal(jobs{j}.jobName, erp_label) && ismember(sid_by_jobDir, training_subjects)
+%         
+%         % Find the dataset name
+%         saveset_index = gab_find_task(jobs{j}, 'gab_task_eeglab_saveset', 1);
+%         opts = varargin2struct(jobs{j}.task{saveset_index}.args.params{:}); 
+%         dataset_path{end+1} = opts.filepath;
+%         dataset_filename{end+1} = opts.filename; 
+% %         dataset_files{end+1} = fullfile(opts.filepath, opts.filename); 
+%     elseif ismember(sid_by_jobDir, test_subjects)
+%         error('Should not be including test subjects'); 
+%         
+%     end %
+% 
+% end % for i=1:numel(jobs)
    
 % Setup a group job to load all data sets, merge them, write the data set.
 
@@ -227,10 +272,61 @@ end % for i=1:numel(jobs)
 % demixing (mixing?) matrix.
 sid = 'group';
 subDir = fullfile(studyDir, sid);
-job = gab_emptyjob; 
-job.jobName = ['group_concat_train']; 
-job.jobDir = fullfile(subDir, 'jobs'); 
-job.parent = '';
+group_concat_1to20_extended = gab_emptyjob; 
+group_concat_1to20_extended.jobName = ['group_concat_1to20_extended']; 
+group_concat_1to20_extended.jobDir = fullfile(subDir, 'jobs'); 
+group_concat_1to20_extended.parent = '';
+
+% Start EEGLAB
+group_concat_1to20_extended.task{end+1}=struct(...
+    'func',@gab_task_envvars,...
+    'args','');
+
+% Load datasets
+group_concat_1to20_extended.task{end+1}=struct(...
+    'func',@gab_task_eeglab_loadset,...
+    'args',struct(...
+        'filepath', {dataset_path}, ...
+        'filename', {dataset_filename}));
+        
+% Merge data sets into one (very long) data set.
+group_concat_1to20_extended.task{end+1}=struct(...
+    'func',@gab_task_eeg_mergeset,...
+    'args',struct());
+
+% Filter data 1-20 Hz.
+group_concat_1to20_extended.task{end+1} = struct(...
+    'func', @gab_task_erplab_pop_basicfilter, ...
+    'args', struct( ...
+        'chanArray', 1:56, ... % 56 channel array
+        'params', ...
+            {{'Filter', 'bandpass', ...
+            'Design', 'butter', ...
+            'Cutoff', [1 20], ...
+            'Order', 4, ... % use 4th order filter 
+            'RemoveDC', 'on', ...
+            'Boundary', 'boundary'}}));
+
+% Run ICA
+group_concat_1to20_extended.task{end+1}=struct(...
+    'func',@gab_task_eeglab_runica,...
+    'args',struct( ...
+        'dataset',  1, ...
+        'chanind',  1:56, ...
+        'concatenate',  'on', ...
+        'icatype',  'runica'));
+    
+% Save new data set
+group_concat_1to20_extended.task{end+1}=struct(...
+    'func', @gab_task_eeglab_saveset, ...
+    'args', struct(...
+        'params', {{'filename', [sid '_concat_1to20_extended.set'], ...
+           'filepath', fullfile(subDir, 'analysis'), ... 
+           'check', 'off', ... 
+           'savemode', 'onefile'}}));
+       
+% Add to job struct
+jobs{end+1} = group_concat_1to20_extended; 
 
     function job = make_grand_average(erp_label)
     %% DESCRIPTION:
@@ -297,11 +393,13 @@ job.parent = '';
     end % make_grand_average
 end % 
 
-function job = modify_erp_job(job, corner_frequencies, epoch_window)
+function job = modify_erp_job(job, corner_frequencies, epoch_window, filter_order)
 %% DESCRIPTION:
 %
 %   Reworks the original ERP job to use a different bandpass filter.
 %   Changes all necessary fields (ERP names, job names, etc.)
+
+if ~exist('filter_order', 'var') || isempty(filter_order), filter_order = 4; end
 
 % Use the current epoch_window by default
 if ~exist('epoch_window', 'var')
@@ -324,7 +422,7 @@ filter_task =struct(...
             {{'Filter', 'bandpass', ...
             'Design', 'butter', ...
             'Cutoff', corner_frequencies, ...
-            'Order', 4, ... % use 4th order filter 
+            'Order', filter_order, ... % use 4th order filter 
             'RemoveDC', 'on', ...
             'Boundary', 'boundary'}}));
 
