@@ -131,6 +131,7 @@ names(data2plot) <- c("time_ms", "Average", "Best", "Worst")
 
 # Create a new plot with this information
 gg <- ggplot(data2plot, aes(x = time_ms, y = Average)) + geom_point(colour = 'black', size = 2) + geom_point(aes(x = time_ms, y = Best), colour = 'green') + geom_point(aes(x = time_ms, y = Worst), colour = 'red')
+gg
 ```
 
 Notice that the best performer's difference wave looks a heck of a lot like the group difference wave. In contrast, the poorest performer's difference wave actually has the sign REVERSED compared to the group average. If we could predict the sign of the difference wave, our performance would impprove substantially, I suspect.

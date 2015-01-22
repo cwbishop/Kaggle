@@ -119,7 +119,12 @@ for s=1:numel(SID)
         'args', struct(...
             'trange', [-50 1000], ... % look at +1 sec after feedback event. Will likely need to narrow this later. 
             'blc', 'pre')); % baseline based on pre-stimulus onset.   
-        
+
+    % Run ICA
+    erp_unfiltered.task{end+1} = struct(...
+        'func', @gab_task_eeglab_runica, ...
+        'args', struct()); 
+    
     % Save set    
     erp_unfiltered.task{end+1}=struct(...
         'func', @gab_task_eeglab_saveset, ...
@@ -218,7 +223,7 @@ for s=1:numel(SID)
 %     jobs{end+1} = erp_0p05to20;
 %     jobs{end+1} = erp_0p05to20_extended;
     jobs{end+1} = erp_1to20_extended;
-    jobs{end+1} = erp_1to8_extended;
+%     jobs{end+1} = erp_1to8_extended;
 %     jobs{end+1} = erp_0p5to20; 
     
 end % s
@@ -227,7 +232,7 @@ end % s
 % jobs{end+1} = make_grand_average('erp_unfiltered'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
 jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1800');
-jobs{end+1} = make_grand_average('erp_filtered_1to8_epoched_-50to1800');
+% jobs{end+1} = make_grand_average('erp_filtered_1to8_epoched_-50to1800');
 % jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1000'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.5to20_epoched_-50to1000'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1000');

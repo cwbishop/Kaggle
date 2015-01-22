@@ -417,14 +417,35 @@ submission.csv <- function(predictions, template = "D:/GitHub/Kaggle/P300_Spelle
     write.csv(template, file = filename, row.names = FALSE)
 }
 
+data.trim <- function(data, time_range = c(-Inf, Inf)){
+    
+    for(i in 1:length(data)){
+        
+        # Mask based on time
+        data[[i]] <- mask.df.time(data[[i]], time_range)
+        
+    }
+    
+    return(data)
+}
 "
 Create a logical mask for a data frame.
 
-Accepts key/value pairs, where 
+Accepts key/value pairs, where each key is the name of a data frame field and each
+value specifies the lower and upper bounds of that 
 
 "
-mask.df <- function(dframe, ...){
+mask.df.time <- function(mylist, time_range){
     
+    mask <- mylist$time_stamps >= time_range[1] & mylist$time_stamps <= time_range[2]    
+    
+    # Get all names of dataframe, then apply logical mask to all fields.
+    df.names <- names(mylist)
+    mylist.mask <- list(mylist[['time_stamps']][mask], mylist[['class_labels']], mylist[['sweeps']][,mask], as.matrix(mylist[['erp_correct']][mask]), as.matrix(mylist[['erp_incorrect']][mask]), as.matrix(mylist[['erp_unknown']][mask]))
+    
+    names(mylist.mask) <- names(mylist)
+    
+    return(mylist.mask)
     
 }
 
