@@ -83,24 +83,7 @@ import_eeg.csv <- function(file_name, save_as_robj = TRUE){
         # Data dimensions
         data_dims <- dim(data_matrix)   
         
-        # Create ERPs
-        #   The time averaged for each condition (1 and 2) are computed 
-        make_erp <- function(label){
-            
-            # Get the trial by trial traces (sweeps) for this condition
-            erp <- data_matrix[class_labels == label, ]
-            
-            # Average over trials
-            erp <- as.matrix(colMeans(erp))
-            
-            # Reshape to channel x time 
-            dim(erp) <- c(data_dims[2]/number_of_channels, number_of_channels)
-            
-            # Transpose erp so it's channels x time points
-            erp <- t(erp)
-            
-            return(erp)
-        }
+        
         
         # Now, calculate correct/incorrect feedback ERPs
         erp_correct <- make_erp(1)
@@ -131,6 +114,28 @@ import_eeg.csv <- function(file_name, save_as_robj = TRUE){
         
 }
 
+"
+
+erpbyrow2chan changes a (channel * time points) vector into a channels x time points matrix. 
+
+"
+erpbyrow2chan <- function(data){
+    
+    # Coerce data into a matrix
+    data = matrix(data = data, nrow = 1)
+    
+    if(class(data) != "NULL"){
+        
+        ntimepoints = dim(data)[2] / number_of_channels
+        
+        dim(data) = c(ntimepoints, number_of_channels)        
+        
+        data = t(data)        
+        
+    }
+    
+    return(data)
+}
 "
 bychan2row changes a channel x time matrix to a 1 x (channel x time) matrix.
 
@@ -167,15 +172,31 @@ import_eeg.rdata <- function(subjects, erp_label){
         # Load the RData
         load(input_file)
         
+        # Let's also add a channel grouping variable.
+        #  Need to know the number of time points per channel first.
+        ntimepoints = dim(data$sweeps)[2]/number_of_channels
+        
+        for(i in 1:number_of_channels){
+            
+            if(i == 1){
+                channel_label = matrix(data = i, nrow = 1, ncol = ntimepoints)
+            }
+            else{
+                channel_label = cbind(channel_label, matrix(data = i, nrow = 1, ncol = ntimepoints))
+            }
+            
+        }
+        
         # Redo ERP calculations to reflect whatever format we currently what them in. Call make.erp to do this.
         data$erp_correct = erpbychan2row(data$erp_correct)
         data$erp_incorrect = erpbychan2row(data$erp_incorrect)
         data$erp_unknown = erpbychan2row(data$erp_unknown)
         
-        # Extend time stamps
+        # Append channel_label variable to data list
+        data$channel_label =  channel_label
         
         # Assign to return list        
-        group_data[[length(group_data) + 1]] <- data
+        group_data[[length(group_data) + 1]] = data
         
     }
     
@@ -186,6 +207,33 @@ import_eeg.rdata <- function(subjects, erp_label){
 Apply t-test filter to difference wave
 "
 
+"
+Create subject specific ERPs from from sweeps.
+
+    sweeps: N x T data matrix, where N is the number of sweeps and T is the number of time points. 
+
+    sweep.labels: N-element vector of class labels. One per sweep.
+
+    event.labels: a grouping class variable. All sweeps that match the event label
+                  are used in the average. 
+"
+
+make.erp.sweeps <- function(sweeps, sweep.labels, event.label){    
+    
+    # Get the trial by trial traces (sweeps) for this condition
+    erp = sweeps[sweep.labels == event.label, ]
+    
+    # Average over the relevant trials
+    erp = as.matrix(colMeans(erp))
+    
+    # Reshape to channel x time
+    # dim(erp) = c(dim(sweeps)[2]/number_of_channels, number_of_channels)
+    
+    # Transpose erp so it's channels x time points
+    # erp = t(erp)
+    
+    return(erp)
+}
 
 "
 Average data at group level. Assumes the data are in precisely the same order
@@ -199,7 +247,7 @@ Need to think about the latter more, if we need to go that route. Still need
 to look at single trial sweeps to see if there's consistent information at any
 time-frequency bin.
 "
-make.erp <- function(group_data){
+make.erp.group <- function(group_data){
     
     # Initialize return variables
     erp_dims <- dim(group_data[[1]]$erp_correct)
@@ -441,14 +489,108 @@ mask.df.time <- function(mylist, time_range){
     
     # Get all names of dataframe, then apply logical mask to all fields.
     df.names <- names(mylist)
-    mylist.mask <- list(mylist[['time_stamps']][mask], mylist[['class_labels']], mylist[['sweeps']][,mask], as.matrix(mylist[['erp_correct']][mask]), as.matrix(mylist[['erp_incorrect']][mask]), as.matrix(mylist[['erp_unknown']][mask]))
+    mylist.mask <- list(time_stamps = mylist[['time_stamps']][mask], 
+                        class_labels = mylist[['class_labels']], 
+                        sweeps = mylist[['sweeps']][,mask], 
+                        erp_correct = as.matrix(mylist[['erp_correct']][mask]), 
+                        erp_incorrect = as.matrix(mylist[['erp_incorrect']][mask]), 
+                        erp_unknown = as.matrix(mylist[['erp_unknown']][mask]))
     
-    names(mylist.mask) <- names(mylist)
+    # names(mylist.mask) <- names(mylist)
     
     return(mylist.mask)
     
 }
 
+" 
+mean.chan creates a data list comprised of an average time waveform over the listed channels. 
+This proved useful when collapsing across channels. When CWB looked at data traces
+across electrodes within an individual, he found that they tended to be highly 
+correlated across time. So an average over all the channels should capture most
+(perhaps all?) the discriminating information for a given sweep or event. 
+
+This function can be used to average over all channels. This is done by averaging
+over channels for each sweep, then recomputing the ERPs for each event type (1 or 2).
+This way there is tight agreement between sweeps and trial averages. 
+
+    subject.data: this is the working list that includes class labels, sweeps, and erp information. 
+
+
+"
+mean.chan <- function(subject.data, channels = 1:number_of_channels){    
+    
+    # Initialize return list
+    return.data = list()
+    
+    # For each subject data set, mask the sweeps by channels, then reshape, then average
+    for(s in 1:length(subject.data)){
+        
+        # Initialize mean.data
+        mean.data = list(); 
+        
+        # Create a channel mask
+        #   We assume that the data are laid out in an identical fashion for all subjects
+        #   This is a reasonably safe assumption for these data (cuz I designed it that way)
+        #   Could get me in some trouble in the future if I do something stupid like change 
+        #   the data structure. Here's hoping I'm not too sleep deprived ... oh wait. 
+        channel_mask = is.element(subject.data[[1]]$channel_label, channels)
+        
+        # Reassign the channel labels
+        # mean.data$channel_labels = subject.data[[s]]$channel_label[channel_mask]
+        
+        # Reassign time stamsp
+        # mean.data$time_stamps = subject.data[[s]]$time_stamps[channel_mask]
+        
+        # Only include the specified channels
+        sweeps = subject.data[[s]]$sweeps[,channel_mask]
+        
+        # Here we compute the average across channels. This is done by:
+        #   1. Reshaping the 1 x (channel x time) sweep into a channel x time matrix (see erpbyrow2chan)
+        #   2. Computing the average over all rows in each column. In other words, we 
+        #      average over all remaining channels.
+        #
+        # The user will recall that the sweep data have been masked to include 
+        # only the specified channels above. 
+        for(i in 1:nrow(sweeps)){
+            
+            if(i==1){
+                mean.sweeps = colMeans(erpbyrow2chan(sweeps[i,]))
+            }
+            else{
+                mean.sweeps = rbind(mean.sweeps, colMeans(erpbyrow2chan(sweeps[i,])))
+            }            
+        }
+        
+        # Assign sweeps to mean.data
+        mean.data$sweeps = mean.sweeps 
+        
+        # Reset time stamps
+        #   We'll only have one data trace coming out of this, so grab the first N points of the time_stamps list
+        mean.data$time_stamps = subject.data[[s]]$time_stamps[1:ncol(mean.sweeps)]
+        
+        # Assign bogus channel label to channel labels
+        #   We'll return a single channel, so assign channel 1 to it all. 
+        mean.data$channel_label = matrix(data = 1, nrow = 1, ncol = ncol(mean.sweeps))
+        
+        # Class labels remain unchanged
+        mean.data$class_labels = subject.data[[s]]$class_labels
+        
+        # Recompute ERPs for this subject   sweeps, sweep.labels, event.label     
+        mean.data$erp_correct = make.erp.sweeps(sweeps = mean.sweeps, sweep.labels = mean.data$class_labels, event.label = 1)
+        mean.data$erp_incorrect = make.erp.sweeps(mean.sweeps, mean.data$class_labels, 2)
+        mean.data$erp_unknown = make.erp.sweeps(mean.sweeps, mean.data$class_labels, 3)                
+        
+        # Append to (growing) return data list (of lists)
+        return.data[[s]] = mean.data
+    }
+    
+    # Return the (modified) data
+    return(return.data)
+    
+    
+    
+    
+}
 
 "
 This function performs a leave-one out maximum likelihood classification based 
