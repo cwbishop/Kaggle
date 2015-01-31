@@ -42,8 +42,8 @@ The code below loads the RData files and generates group ERPs for the training a
 data.train <- import_eeg.rdata(subjects.train, erp_label)
 data.test <- import_eeg.rdata(subjects.test, erp_label)
 
-erp.train <- make.erp(data.train)
-erp.test <- make.erp(data.test)
+erp.train <- make.erp.group(data.train)
+erp.test <- make.erp.group(data.test)
 ```
 
 A First Look athe Data

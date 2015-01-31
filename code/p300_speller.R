@@ -119,7 +119,7 @@ import_eeg.csv <- function(file_name, save_as_robj = TRUE){
 erpbyrow2chan changes a (channel * time points) vector into a channels x time points matrix. 
 
 "
-erpbyrow2chan <- function(data){
+erpbyrow2chan <- function(data, number_of_channels = 56){
     
     # Coerce data into a matrix
     data = matrix(data = data, nrow = 1)
@@ -592,66 +592,185 @@ mean.chan <- function(subject.data, channels = 1:number_of_channels){
     
 }
 
-"
-This function performs a leave-one out maximum likelihood classification based 
-on the Pearson's correlation coefficient. 
 
-This was originally written for use with spatio-temporal brain data (that is, 
-ERPs), but should scale to time-frequency representations without issue, 
-provided the scale is linear (or log transformed to BE linear in the case of power)
+##########
+" 
+This block of code deals with PCA based processing. Functions include ...
+
 "
 
-# classify.pcc <- function(group_data){
-#     
-#     percentage_correct = numeric()
-#     for(i in 1:length(group_data)){
-#         
-#         # Test data
-#         #   We'll test each sweep individually.
-#         test_data <- group_data[[i]]        
-#         
-#         # Template data to which 
-#         template_data <- group_data[1:length(group_data) != i]
-#         
-#         # Compute group ERP
-#         erp <- make.erp(template_data)
-#         
-#         # Assign to easier to use variables
-#         erp_correct <- t(erp$erp_correct)
-#         erp_incorrect <- t(erp$erp_incorrect)
-#         
-#         # Reshape to concatenate channels
-#         erp_dims <- dim(erp$erp_correct)
-#         dim(erp_correct) <- c(erp_dims[1] * erp_dims[2], 1)
-#         dim(erp_incorrect) <- c(erp_dims[1] * erp_dims[2], 1)        
-#         
-#         # Now, classify each sweep based on PCC        
-#         n_correct = 0
-#         for(t in 1:dim(test_data$sweeps)[1]){
-#             
-#             # Get the sweep
-#             sweep <- test_data$sweeps[t,]
-#             
-#             # class_label
-#             class_label <- test_data$class_labels[t]
-#             # Compute correlation with correct/incorrect erp
-#             pcc <- (c( cor(x=sweep, y=erp_correct), cor(x=sweep, y=erp_incorrect)))
-#             
-#             # Class based on max
-#             #   Take absolute value because negative correlations are fine. 
-#             prediction <- which.max(pcc)
-#             
-#             if(prediction == class_label){
-#                 n_correct = n_correct + 1
-#             }
-#         }
-#         
-#         # Compute % correct
-#         
-#         percentage_correct[i] = (n_correct / t)*100
-#         
-#     }
-#     
-#     # Return performance
-#     return(percentage_correct)
-# }
+##########
+"
+DESCRIPTION:
+
+concat.sweeps.chan converts an M x N matrix of sweeps (observations x time points)
+into a channel (usually 56) x (M*N) matrix. This data massaging proved useful when
+creating concatenated data sets for PCA estimation (noise removal and dimension reduction)
+
+INPUT:
+
+    sweeps: M x N matrix, where M is the number of sweeps and N is the number of 
+            time points
+
+    number_of_channels: number of channels (or alternatively components) in each 
+                        sweep. This number is used to determine empirically the
+                        number of time points within the sweep. (default = 56) 
+
+OUTPUT:
+
+    sweeps.concat:  C x T*M matrix, where C is the number of channels, T is the 
+                    number of time points per observation and M is the number of 
+                    observations.
+"
+concat.sweeps.chan <- function(sweeps, number_of_channels = 56){
+    
+    for(i in 1:nrow(sweeps)){
+           
+        tmp = erpbyrow2chan(sweeps[i,], number_of_channels = number_of_channels)
+        
+        if(i == 1){
+            sweeps.concat = tmp
+        }
+        else{
+            sweeps.concat = cbind(sweeps.concat, tmp)
+        }
+    } # for i=1:nrow(sweeps)
+    
+    return(sweeps.concat)
+}
+
+##########
+"
+DESCRIPTION:
+
+concat.sweeps.chan.group is a group-level wrapper for concat.sweeps.chan. It 
+returns the C x (T*M*S) data matrix, where C is the number of channels, T is the
+number of time points per sweep, M is the number of observations, and S is the
+number of subjects
+
+This proved useful when concatenating data across subjects for PC Estimation.
+
+INPUT:
+
+    data:   list of length S, where S is the number of subjects. Each element must
+            contain a sweeps field. 
+
+OUTPUT:
+
+    data.concat:    concatenated data, as described in description above.
+
+"
+concat.sweeps.chan.group <- function(data, number_of_channels = 56){
+    
+    
+    # Loop through each subject's data
+    for(s in 1:length(data)){
+        
+        # Update user on progress
+        message(paste('Concatenating subject', as.character(s), 'of', as.character(length(data))))
+        tmp = concat.sweeps.chan(data[[s]]$sweeps, number_of_channels = number_of_channels)
+        # Get sweeps field and concatenate.
+        if(s == 1){
+            data.concat = tmp
+        }
+        else{
+            data.concat = cbind(data.concat, tmp)
+        }        
+        
+    }
+    
+    # Return concatenated sweeps
+    return(data.concat)
+}
+
+##########
+"
+DESCRIPTION:
+
+pca.svd.estimate pre-processes features (in our case, channels) and returns SVD
+decomposition of the data.
+
+Within the context of the P300 speller competition, CWB intended to feed in a 
+concatenated time course (across sweeps, timepoints, and subjects) to get a 
+group average PCA decomposition. The PCs and estimated scaling/centering can then
+be used to project individual test sweeps.
+
+INPUT:
+
+    data:   a C x (T * M) matrix, where C is the number of channels, T is the 
+            number of time points and M is the number of trials.
+
+OUTPUT:
+    
+    pc: a list with the following attributes
+            $u: left singular values
+            $v: right singular values
+            $d: singular values (eigen value)
+            $cmeans:    channel means (used for scaling)
+            $cstd:  channel std (used for scaling)
+
+Christopher W. Bishop
+"
+pca.svd.estimate <- function(data, center = TRUE, scale = TRUE, number_of_channels = 56, ...){
+    
+    # Sanity check to make sure channels is our rows.
+    if(nrow(data) != number_of_channels){
+        stop('Number of channels does not match the number of rows. Transpose?')
+    }
+    
+    # Get the mean and standard deviation of each row (channel)
+    #   To do this, we need to transpose the matrix
+    data.scale = scale(t(data), scale = scale, center = center)    
+    
+    # Transpose the data so channels are rows.
+    data.scale = t(data.scale)
+    
+    # Singular Value Decomposition (SVD)
+    s = svd(data.scale)
+    
+    # Add scaling information to SVD
+    #   This might be useful if we need to recover the data or scale test 
+    #   sweeps. 
+    s$cmeans = attributes(data.scale)$`scaled:center`
+    s$cstd = attributes(data.scale)$`scaled:scale`
+    
+    # Return the SVD results
+    return(s)
+    
+}
+
+##########
+"
+DESCRIPTION:
+
+pca.svd.project projects data onto the corresponding 
+"
+pca.svd.project <- function(data, pc, pc.index, number_of_channels = 56){
+    
+    # Sanity check to make sure channels is our rows.
+    if(nrow(data) != number_of_channels){
+        stop('Number of channels does not match the number of rows. Transpose?')
+    }
+    
+    # Transpose data for scaling/centering purposes
+    data = t(data)
+    
+    # Center and scale
+    #   We can only center and scale if we have column means and cstd. 
+    #   Statement below returns false if those are not present.
+    if(!is.null(pc$cmeans)){
+        data = scale(data, center = pc$cmeans, scale = pc$cstd)
+    }
+    
+    # Subset U so we only project data onto specified PCs
+    U = pc$u[,pc.index]
+    
+    data.project = data %*% U
+    
+    # Transpose so components are rows again
+    data.project = t(data.project)
+    
+    # Return the projected data
+    return(data.project)
+        
+}
