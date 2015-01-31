@@ -695,6 +695,8 @@ concatenated time course (across sweeps, timepoints, and subjects) to get a
 group average PCA decomposition. The PCs and estimated scaling/centering can then
 be used to project individual test sweeps.
 
+Note that PCA (via SVD) is done on the covariance matrix here.
+
 INPUT:
 
     data:   a C x (T * M) matrix, where C is the number of channels, T is the 
@@ -725,8 +727,12 @@ pca.svd.estimate <- function(data, center = TRUE, scale = TRUE, number_of_channe
     # Transpose the data so channels are rows.
     data.scale = t(data.scale)
     
+    # Estimate covariance matrix
+    #   Scale by the number of samples
+    data.cov = (1/ncol(data.scale)) * ((data.scale) %*% t(data.scale))
+    
     # Singular Value Decomposition (SVD)
-    s = svd(data.scale)
+    s = svd(data.cov)
     
     # Add scaling information to SVD
     #   This might be useful if we need to recover the data or scale test 
@@ -743,7 +749,27 @@ pca.svd.estimate <- function(data, center = TRUE, scale = TRUE, number_of_channe
 "
 DESCRIPTION:
 
-pca.svd.project projects data onto the corresponding 
+pca.svd.project projects data onto the corresponding component. To do this, we 
+center/scale the data using the mean/std of the training set. These data are then
+projected onto the left singular values, which gives us a time course for each 
+requested component.
+
+INPUT:
+
+    data:   a C x T data matrix, where C is the number of channels and T is the 
+            number of samples
+
+    pc:     pc is a list returned by pca.svd.estimate
+
+    pc.index:   vector with the PCs to project the data onto.
+
+    number_of_channels: You guessed it. The number of channels. Spooky. 
+
+OUTPUT:
+
+    data.project:   PC x T matrix, where PC is the number of components 
+                    specified in pc.index
+
 "
 pca.svd.project <- function(data, pc, pc.index, number_of_channels = 56){
     
@@ -773,4 +799,56 @@ pca.svd.project <- function(data, pc, pc.index, number_of_channels = 56){
     # Return the projected data
     return(data.project)
         
+}
+
+##########
+"
+DESCRIPTION:
+
+    pca.svd.project.sweeps is used to project a sweeps matrix (M x (TxC), where
+    M is the number of Trials, T is the number of time points, and C is the 
+    number of channels, onto one or more principle components. 
+
+INPUT:
+    
+    data:   sweeps matrix with dimensions M x (T*C), where M is the number of 
+            trials, T is the number of time points per trial, and C is the number
+            of data channels (electrodes)
+
+    pc:     pc is a list returned from pca.svd.estimate.
+
+    pc.index:   vector, the PC indices to project the sweep onto. 
+
+    number_of_channels: Gasp! The number of channels!
+
+Christopher W Bishop
+1/15
+"
+pca.svd.project.sweeps <- function(data, pc, pc.index, number_of_channels = 56){
+    
+    # Loop through each sweep (row) and project it onto the requested PCs
+    for(i in 1:nrow(data)){
+        
+        # Get the concatenated sweep and break it into a channel x time point matrix
+        # This is necessary for data project in pca.svd.project
+        sweep = erpbyrow2chan(data[i,])
+        
+        sweep.project = erpbychan2row(pca.svd.project(data = sweep, pc = pc, pc.index = pc.index, number_of_channels = number_of_channels))
+                                      
+        if(i == 1){
+            
+            # We'll project the data onto the requested PCs, then reshape it into
+            # a single row. That is, concatenate the compoents into a single
+            # time course. 
+            data.project = sweep.project
+        }
+        else{
+            data.project = rbind(data.project, sweep.project)
+        }
+        
+    }
+    
+    # Return the projected sweeps 
+    return(data.project)
+    
 }
