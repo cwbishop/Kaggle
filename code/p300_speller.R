@@ -12,7 +12,7 @@ number_of_channels <- 56
 
 # We are using a constant erp_label
 #   This is used to load and write data (generally)
-erp_label <- '-erp_filtered_0.05to20_epoched_-50to1800'
+erp_label <- '-erp_filtered_1to20_epoched_-50to1800'
 
 # Subject information
 subjects.train = c('S02', 'S06', 'S07', 'S11', 'S12', 'S13', 'S14', 'S16', 'S17', 'S18', 'S20', 'S21', 'S22', 'S23', 'S24', 'S26')
@@ -214,7 +214,7 @@ Create subject specific ERPs from from sweeps.
 
     sweep.labels: N-element vector of class labels. One per sweep.
 
-    event.labels: a grouping class variable. All sweeps that match the event label
+    event.label: a grouping class variable. All sweeps that match the event label
                   are used in the average. 
 "
 
@@ -851,4 +851,126 @@ pca.svd.project.sweeps <- function(data, pc, pc.index, number_of_channels = 56){
     # Return the projected sweeps 
     return(data.project)
     
+}
+
+##########
+"
+DESCRIPTION:
+
+    pca.svd.erp creates an ERP based on PCA projections. More concretely, each 
+    sweep is projected onto a specified number of components. The sweeps that 
+    match the corresponding event label are then averaged to create an ERP. 
+
+INPUT:
+
+    data:   sweeps matrix, N x (T*C) where N is the number of sweeps, T is the 
+            number of time points per epoch (sweep), and C is the number of 
+            channels.
+
+    sweep.labels:   N-element vector of class labels. 
+
+    event.label:    integer, the class label we want to use to create an ERP
+
+    pc:     this is the pc list returned from pca.svd.estimate. 
+
+    pc.index:   vector specifying which PCs to project the data onto.
+
+    number_of_channels: number of channels (Default = 56)
+
+Christopher W. Bishop
+1/15
+"
+pca.svd.erp <- function(data, sweep.labels, event.label, pc, pc.index, number_of_channels = 56){
+    
+    # Number of components
+    number_of_components = length(pc.index)
+    
+    # Project the sweeps onto the requested principle components    
+    data.project = pca.svd.project.sweeps(data = data, pc = pc, pc.index = pc.index, number_of_channels = number_of_channels)
+    
+    # Now make an ERP
+    erp = make.erp.sweeps(sweeps = data.project, sweep.labels = sweep.labels, event.label = event.label)
+    
+    # Return ther ERP
+    return(erp)
+}
+    
+##########
+"
+DESCRIPTION:
+
+    pca.svd.screen is used to create group level ERPs based on PCs. This hope here
+    is to identify PCs that can discriminate between correct and incorrect feedback
+    trials. 
+
+INPUT:
+
+    data:   this is the data.train/data.test lists (of lists) returned from 
+            import_eeg.rdata. 
+
+    pc:     this is the list returned from pca.svd.estimate
+
+    number_of_channels: number of channels!
+    
+    plot.flat:  logical, if TRUE then plots are generated. If False then no plots
+                generated (default = TRUE). If set to FALSE, then there's not much
+                to be learned from this function, CWB doesn't think.
+
+OUTPUT:
+
+    Some plots ... not sure if it will return a variable yet.
+
+Christopher W Bishop
+1/15
+"
+pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.flag = TRUE){
+    
+    # Number of components
+    #   This will be used below to reshape the data for plotting purposes
+    number_of_components = length(pc.index)
+    
+    # Copy data
+    data.project = data
+
+    # Project each subject's data onto the specified PCs. Replace the
+    for(i in 1:length(data.project)){        
+        
+        data.project[[i]]$sweeps = pca.svd.project.sweeps(data = data.project[[i]]$sweeps, pc = pc, pc.index = pc.index, number_of_channels = number_of_channels)
+         
+        # Replace correct/incorrect/unknown ERPs
+        #   We also need to reshape the resulting ERP such that we have a component x time point matrix
+        data.project[[i]]$erp_correct = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 1)
+        data.project[[i]]$erp_incorrect = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 2)                
+        data.project[[i]]$erp_unknown = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 3)
+        
+    }
+    
+    # Now make the group ERP
+    group.project = make.erp.group(data.project)
+    
+    # Reshape erp_correct, erp_incorrect, and erp_unknown into a component x time matrix
+    #   Actually, we'll omit erp_unknown for now
+    erp_correct = erpbyrow2chan(group.project$erp_correct, number_of_channels = number_of_components)
+    erp_incorrect = erpbyrow2chan(group.project$erp_incorrect, number_of_channels = number_of_components)
+    
+    # Now, create a plot with the ERPs and difference waves for each component
+    for(i in 1:nrow(erp_correct)){
+        
+        # Create the data frame with the data in it
+        data2plot = data.frame("time_stamps" = data.project[[1]]$time_stamps[1:ncol(erp_correct)], 
+                               "Correct" = erp_correct[i,], 
+                               "Incorrect" = erp_incorrect[i,], 
+                               "Difference" = erp_incorrect[i,] - erp_correct[i,])
+        
+        # ERP plot
+        gg <- ggplot(data2plot, aes(x = time_stamps)) +
+            geom_line(aes(y = Correct, colour = "Black")) +
+            geom_line(aes(y = Incorrect, colour = "Red")) + 
+            geom_line(aes(y = Difference, size = 2), colour = 'Blue') + 
+            ggtitle(paste0("PC", as.character(i))) +
+            scale_x_continuous(breaks = seq(0, 1500, 100))
+        
+        # Make the plot
+        gg
+    }
 }
