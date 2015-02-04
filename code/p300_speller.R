@@ -3,6 +3,7 @@ require(ggplot2)
 require(tools)
 require(stringr)
 require(fastICA) # this will be required for some data cleaning later
+require(caret)
 
 # Set working directory
 setwd("D:/GitHub/Kaggle/code")
@@ -12,7 +13,7 @@ number_of_channels <- 56
 
 # We are using a constant erp_label
 #   This is used to load and write data (generally)
-erp_label <- '-erp_filtered_1to20_epoched_-50to1800'
+erp_label <- '-erp_filtered_1to20_epoched_-50to1800_NEB'
 
 # Subject information
 subjects.train = c('S02', 'S06', 'S07', 'S11', 'S12', 'S13', 'S14', 'S16', 'S17', 'S18', 'S20', 'S21', 'S22', 'S23', 'S24', 'S26')
@@ -852,6 +853,29 @@ pca.svd.project.sweeps <- function(data, pc, pc.index, number_of_channels = 56){
     return(data.project)
     
 }
+##########
+"
+DESCRIPTION:
+
+    pca.svd.project.subjects alters the subject lists such that the sweeps and 
+    ERPs are projected onto the specified PCs. Sweeps is replaced with the data
+    projection, ERPs are recalculated, etc. 
+
+INPUT
+"
+pca.svd.project.subjects <- function(data, pc, pc.index, number_of_channels = 56){
+    
+    # Loop through each subject and reset the sweeps, then update the ERPs/time
+    # stamps/channel labels.
+    for(i in 1:length(data)){
+        
+        # Project sweeps
+        data[[i]]$sweeps = pca.svd.project.sweeps(data = data[[i]]$sweeps, pc = pc, pc.index = pc.index, number_of_channels = number_of_channels)
+        
+        # Update ERPs
+        
+    }
+}
 
 ##########
 "
@@ -939,9 +963,10 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
          
         # Replace correct/incorrect/unknown ERPs
         #   We also need to reshape the resulting ERP such that we have a component x time point matrix
-        data.project[[i]]$erp_correct = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 1)
-        data.project[[i]]$erp_incorrect = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 2)                
-        data.project[[i]]$erp_unknown = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 3)
+        data.project[i] = update.data.subject(data = data.project[i], number_of_channels = number_of_channels)
+        #data.project[[i]]$erp_correct = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 1)
+        #data.project[[i]]$erp_incorrect = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 2)                
+        #data.project[[i]]$erp_unknown = make.erp.sweeps(sweeps = data.project[[i]]$sweeps, sweep.labels = data.project[[i]]$class_labels, event.label = 3)
         
     }
     
@@ -957,7 +982,7 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
     for(i in 1:nrow(erp_correct)){
         
         # Create the data frame with the data in it
-        data2plot = data.frame("time_stamps" = data.project[[1]]$time_stamps[1:ncol(erp_correct)], 
+        data2plot = data.frame("time_stamps" = data.project[[1]]$time_stamps, 
                                "Correct" = erp_correct[i,], 
                                "Incorrect" = erp_incorrect[i,], 
                                "Difference" = erp_incorrect[i,] - erp_correct[i,])
@@ -973,4 +998,94 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
         # Make the plot
         gg
     }
+}
+
+##########
+"
+DESCRIPTION:
+
+    update.data.subject updates a data structure
+
+"
+update.data.subject <- function(data, number_of_channels = 56){
+    
+    # Recalculate the ERPs
+    data = update.data.erp(data = data, number_of_channels = number_of_channels)
+    
+    # Match the time stamps the the SWEEPS matrix
+    data = update.data.tim_stamps(data = data, number_of_channels = number_of_channels)
+    
+}
+
+##########
+"
+DESCRIPTION:
+
+    updates the ERPs in a subject data list. This is often necessary if the contents
+    of the 'sweeps' field is altered in some way (e.g., projected on to PCs or 
+    similar)
+
+INPUT:
+
+    data:   subject data list returned from import_eeg.rdata. This can be data 
+            for one or more subjects simultaneously. 
+
+    numberof_channels:  number of channels (or components)
+
+OUTPUT:
+
+    data:   updated data list with recomputed ERPs. 
+
+Christopher W Bishop
+1/15
+"
+update.data.erp <- function(data, number_of_channels = 56){
+        
+    # 
+    for(i in 1:length(data)){        
+        
+        # Correct ERP
+        data[[i]]$erp_correct = make.erp.sweeps(sweeps = data[[i]]$sweeps, sweep.labels = data[[i]]$class_labels, event.label = 1)
+        
+        # Incorrect ERP
+        data[[i]]$erp_incorrect = make.erp.sweeps(sweeps = data[[i]]$sweeps, sweep.labels = data[[i]]$class_labels, event.label = 2)
+        
+        # Unknown ERP (only relevant for test subjects)
+        data[[i]]$erp_unknown = make.erp.sweeps(sweeps = data[[i]]$sweeps, sweep.labels = data[[i]]$class_labels, event.label = 3)
+        
+    }
+    
+    # Return the updated data structure
+    return(data)
+}
+
+##########
+"
+DESCRIPTION:
+
+    update.data.time_stamps updates the time stamps associated with a data structure
+
+INPUT:
+
+    data:   subject data list returned from import_eeg.rdata
+
+    number_of_channels:     number of channels
+
+OUTPUT:
+    
+    data:   data structure with updated time stamps
+
+Christopher W Bishop
+1/15
+"
+update.data.time_stamps <- function(data, number_of_channels = 56){
+    
+    for(i in 1:length(data)){
+        
+        data[[i]]$time_stamps = data[[i]]$time_stamps[1:ncol(data[[i]]$sweeps)]
+        
+    }
+    
+    # Return the updated data structure
+    return(data)
 }
