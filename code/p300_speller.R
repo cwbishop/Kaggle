@@ -351,15 +351,19 @@ classify.pcc <- function(data.train, data.test, cross_validate = TRUE){
     # Compute the template data. 
     #   These data are used as the templates to which single-trial sweeps are compared.
     #   We have a template for correct and incorrect feedback events.
-    erp.train <- make.erp(data.train)
-    erp.correct <- t(erp.train$erp_correct)
-    erp.incorrect <- t(erp.train$erp_incorrect)
+    erp.train = make.erp.group(data.train)
+    erp.correct = erp.train$erp_correct
+    erp.incorrect = erp.train$erp_incorrect
+    
+    # erp.train <- make.erp.group(data.train)
+    # erp.correct <- t(erp.train$erp_correct)
+    # erp.incorrect <- t(erp.train$erp_incorrect)
     
     # Concatenate channels
     #   Doing this will force templates to match the spatio-temporal samples of the individual sweeps below. 
-    erp.dims <- dim(erp.correct)
-    dim(erp.correct) <- c(erp.dims[1] * erp.dims[2], 1)
-    dim(erp.incorrect) <- c(erp.dims[1] * erp.dims[2], 1)   
+    #erp.dims <- dim(erp.correct)
+    #dim(erp.correct) <- c(erp.dims[1] * erp.dims[2], 1)
+    #dim(erp.incorrect) <- c(erp.dims[1] * erp.dims[2], 1)   
     
     for(i in 1:length(data.test)){
         
@@ -869,12 +873,21 @@ pca.svd.project.subjects <- function(data, pc, pc.index, number_of_channels = 56
     # stamps/channel labels.
     for(i in 1:length(data)){
         
+        # Give user some feedback so she knows where we are in the projection process
+        message(paste('Projecting subject ', as.character(i), '/', as.character(length(data))))
+        
         # Project sweeps
         data[[i]]$sweeps = pca.svd.project.sweeps(data = data[[i]]$sweeps, pc = pc, pc.index = pc.index, number_of_channels = number_of_channels)
         
-        # Update ERPs
+        # Update the subject data structure
+        #   This should update the ERPs, time stamps, etc.
+        data[i] = update.data.subject(data = data[i])
         
     }
+    
+    # Return the updated data structure
+    return(data)
+    
 }
 
 ##########
@@ -978,6 +991,10 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
     erp_correct = erpbyrow2chan(group.project$erp_correct, number_of_channels = number_of_components)
     erp_incorrect = erpbyrow2chan(group.project$erp_incorrect, number_of_channels = number_of_components)
     
+    # Plot the proportion of variance explained. Helps determine which components 
+    # should be kept. Typically use a 95% cut off criterion.
+    qplot(x = 1:length(pc$d), y = cumsum(pc$d)/sum(pc$d) * 100)
+    
     # Now, create a plot with the ERPs and difference waves for each component
     for(i in 1:nrow(erp_correct)){
         
@@ -1013,7 +1030,7 @@ update.data.subject <- function(data, number_of_channels = 56){
     data = update.data.erp(data = data, number_of_channels = number_of_channels)
     
     # Match the time stamps the the SWEEPS matrix
-    data = update.data.tim_stamps(data = data, number_of_channels = number_of_channels)
+    data = update.data.time_stamps(data = data, number_of_channels = number_of_channels)
     
 }
 
