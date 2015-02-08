@@ -195,6 +195,50 @@ for s=1:numel(SID)
     % in the difference wave.
     erp_1to8_extended = modify_erp_job(erp_unfiltered, [1 8], [-50 1800]); 
     
+    % Create the job
+    erp_1to20_extended_neb=gab_emptyjob;
+    erp_1to20_extended_neb.jobName=[erp_1to20_extended.jobName '_NEB'];
+    erp_1to20_extended_neb.jobDir=fullfile(subDir, 'jobs');
+    erp_1to20_extended_neb.parent='';
+    
+    % Load environmental variables
+    erp_1to20_extended_neb.task{end+1}=struct(...
+        'func',@gab_task_envvars,...
+        'args','');
+    
+    % Load dataset
+    erp_1to20_extended_neb.task{end+1}=struct(...
+        'func',@gab_task_eeglab_loadset,...
+        'args',struct(...
+            'filepath', fullfile(studyDir, sid, 'analysis' ), ...
+            'filename', [sid '-erp_filtered_1to20_epoched_-50to1800_NEB.set']));
+    
+    % Create ERPs
+    erp_1to20_extended_neb.task{end+1}=struct(...
+        'func', @gab_task_erplab_pop_averager, ...
+        'args', struct(...
+            'params', {{'DSindex', 1, ...
+                'Criterion', 'good', ...
+                'SEM', 'on', ...
+                'ExcludeBoundary', 'on', ...
+                'Warning', 'off'}}));
+            
+    % Apply bin operator
+    erp_1to20_extended_neb.task{end+1} = struct(...
+        'func', @gab_task_erplab_pop_binoperator, ...
+        'args', struct(...
+            'formulas', fullfile(studyDir, '..', 'code', 'p300_speller_binops.txt')));
+        
+    % Save ERP        
+    erp_1to20_extended_neb.task{end+1}=struct(...
+        'func', @gab_task_erplab_pop_savemyerp, ...
+        'args', struct(...
+            'params', {{'erpname', [sid '-erp_filtered_1to20_epoched_-50to1800_NEB'], ...
+                'filename', [sid '-erp_filtered_1to20_epoched_-50to1800_NEB.erp'], ...
+                'filepath', fullfile(subDir, 'analysis'), ...
+                'gui', 'none', ...
+                'Warning', 'off'}}));
+            
     % CWB wants to do some data cleaning to estimate the time course of eye
     % blinks and other noise sources based on a group average ICA
     % decomposition. To do this, let's concatenate all the training subject
@@ -222,7 +266,8 @@ for s=1:numel(SID)
 %     jobs{end+1} = erp_1to20; 
 %     jobs{end+1} = erp_0p05to20;
 %     jobs{end+1} = erp_0p05to20_extended;
-    jobs{end+1} = erp_1to20_extended;
+%     jobs{end+1} = erp_1to20_extended;
+    jobs{end+1} = erp_1to20_extended_neb;
 %     jobs{end+1} = erp_1to8_extended;
 %     jobs{end+1} = erp_0p5to20; 
     
@@ -231,7 +276,8 @@ end % s
 %% GROUP COMPARISONS
 % jobs{end+1} = make_grand_average('erp_unfiltered'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.05to20_epoched_-50to1800');
-jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1800');
+% jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1800');
+jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1800_NEB');
 % jobs{end+1} = make_grand_average('erp_filtered_1to8_epoched_-50to1800');
 % jobs{end+1} = make_grand_average('erp_filtered_1to20_epoched_-50to1000'); 
 % jobs{end+1} = make_grand_average('erp_filtered_0.5to20_epoched_-50to1000'); 
@@ -331,7 +377,7 @@ group_concat_1to20_extended.task{end+1}=struct(...
            'savemode', 'onefile'}}));
        
 % Add to job struct
-jobs{end+1} = group_concat_1to20_extended; 
+% jobs{end+1} = group_concat_1to20_extended; 
 
     function job = make_grand_average(erp_label)
     %% DESCRIPTION:

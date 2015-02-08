@@ -248,7 +248,7 @@ Need to think about the latter more, if we need to go that route. Still need
 to look at single trial sweeps to see if there's consistent information at any
 time-frequency bin.
 "
-make.erp.group <- function(group_data){
+make.erp.group <- function(group_data, pflag = FALSE){
     
     # Initialize return variables
     erp_dims <- dim(group_data[[1]]$erp_correct)
@@ -282,6 +282,28 @@ make.erp.group <- function(group_data){
     erp_correct = erp_correct/length(group_data)
     erp_incorrect = erp_incorrect/length(group_data)
     erp_unknown = erp_unknown/length(group_data)
+    
+    # Create descriptive plots
+    if(pflag){
+        
+        # Create the data frame with the data in it
+        data2plot = data.frame("time_stamps" = group_data[[1]]$time_stamps, 
+                               "Correct" = erp_correct, 
+                               "Incorrect" = erp_incorrect, 
+                               "Difference" = erp_incorrect - erp_correct)
+        
+        # ERP plot
+        gg <- ggplot(data2plot, aes(x = time_stamps)) +
+            geom_line(aes(y = Correct, colour = "Black")) +
+            geom_line(aes(y = Incorrect, colour = "Red")) + 
+            geom_line(aes(y = Difference, size = 2), colour = 'Blue') + 
+            ggtitle(paste0("PC", as.character(i))) +
+            scale_x_continuous(breaks = seq(0, 1500, 100))
+        
+        # Generate the plot
+        print(gg)
+        
+    }
     
     return_list <- list("time_stamps" = time_stamps, "erp_correct" = erp_correct, "erp_incorrect" = erp_incorrect, "erp_unknown" = erp_unknown)
 
@@ -374,7 +396,7 @@ classify.pcc <- function(data.train, data.test, cross_validate = TRUE){
             class.label <- data.test[[i]]$class_labels[t]
             
             # Compute PCC against each template (correct/incorrect feedback)            
-            pcc <- (c( cor(x = sweep, y=erp.correct), cor(x = sweep, y = erp.incorrect)))
+            pcc <- (c( cor(x = sweep, y = as.numeric(erp.correct)), cor(x = sweep, y = as.numeric(erp.incorrect))))
             
             # Make prediction
             prediction.test[t,i] <- which.max(pcc)
@@ -391,6 +413,109 @@ classify.pcc <- function(data.train, data.test, cross_validate = TRUE){
     
 }
 
+#########
+" 
+DESCRIPTION:
+
+classify.logit applies logistic regression to data. 
+
+INPUT:
+
+    data:   subject data structure, as returned from import_eeg.rdata or similar.
+
+
+
+
+"
+classify.logit <- function(data.train, data.test, cross_validate = TRUE, pflag = TRUE, ...){
+    
+    # Run Cross-validation    
+    if(cross_validate){
+        
+        # Remove one subject at at a time and run the analysis
+        for(i in 1:length(data.train)){
+            
+            # Keep user updated of cross-validation progress
+            # message()
+            message(paste('Cross validation:', 'subject', as.character(i), 'of', as.character(length(data.train))))
+            
+            # Run the model withholding one subject
+            cv.pred = classify.logit(data.train = data.train[-i], data.test = data.train[i], cross_validate = FALSE)
+            
+            # Assign to probability and label cross val
+            tprobability.cross_val = matrix(cv.pred$probability.test, nrow = 1)
+            tlabel.cross_val = matrix(cv.pred$label.test, nrow = 1)
+            
+            if(i == 1){
+                probability.cross_val = tprobability.cross_val
+                label.cross_val = tlabel.cross_val
+            }
+            else{
+                probability.cross_val = rbind(probability.cross_val, tprobability.cross_val)
+                label.cross_val = rbind(label.cross_val, tlabel.cross_val)
+            }
+            
+            # Create a plot for this subject
+            if(pflag){                
+                
+                data2plot = (data.frame(p = as.numeric(tprobability.cross_val), type = as.numeric(tlabel.cross_val)))                
+                print(ggplot(data2plot, aes(x=1:340, y = p, colour = type)) + geom_point(size = 3))
+                
+            }
+        }
+        
+    }
+    else{
+        
+        # Assign empty values to these if cross validation is skipped
+        probability.cross_val = matrix()
+        label.cross_val = matrix()
+        
+    }
+    
+    # Concatenate sweeps and class labels into a data frame for modeling
+    #   The last column contains class labels
+    df.train = concat.sweeps.trial.group(data = data.train, make.dataframe = TRUE)
+    df.test = concat.sweeps.trial.group(data = data.test, make.dataframe = TRUE)
+    
+    # Class column name
+    #   we'll grab the name dynamically for 
+    # col.name = names(df.train)[ncol(df.train)]
+    
+    # Fit training data with logistic regression
+    #   We'll use glm for now, with no regularization. We can fix that later.
+    model <- glm(Type ~ ., data = df.train, family = "binomial")
+    
+    # Estimate probability for each sweep
+    for(i in 1:length(data.test)){
+        
+        # Convert sweeps to data frame
+        df = concat.sweeps.trial.group(data = data.test[i], make.dataframe = TRUE)
+        
+        # Create predictions
+        tprobability.test = matrix(data = predict(model, newdata = df[, 1:ncol(df)-1], type = "response"), nrow = 1)
+                                  
+        # Assign label.test
+        tlabel.test = matrix(data = df[,ncol(df)], nrow = 1)
+        if(i == 1){
+            label.test = tlabel.test
+            probability.test = tprobability.test
+        }
+        else{
+            label.test = rbind(label.test, tlabel.test)
+            probability.test = rbind(probability.test, tprobability.test)
+        }
+        
+    }
+    
+    # Return probabilities and label information in a data structure. 
+    return(list( "probability.cross_val" = probability.cross_val, 
+                       "label.cross_val" = label.cross_val, 
+                       "probability.test" = probability.test, 
+                       "label.test" = label.test))
+    
+    
+}
 "
 Here we evaluate classifier performance by calculating sensitivity, specificity,
 and accuracy.
@@ -435,7 +560,27 @@ classifier.eval <- function(labels, predictions){
         specificity[i] <- (true_negatives)/(true_negatives + false_positives)
         
     }
-        
+       
+    # Create summary plots
+    
+    # Accuracy plot
+    data2plot <- as.data.frame(cbind((subjects.train), (pcc.eval$accuracy)))
+    names(data2plot) <- c("subject", "accuracy")
+    print(ggplot(data2plot, aes(subject, accuracy)) + geom_point(size = 5))
+    # summary(t(pcc.eval$accuracy))
+    
+    # Sensitivity plot
+    data2plot <- as.data.frame(cbind((subjects.train), (pcc.eval$sensitivity)))
+    names(data2plot) <- c("subject", "sensitivity")
+    print(ggplot(data2plot, aes(subject, sensitivity)) + geom_point(size = 5))
+    # summary(t(pcc.eval$sensitivity))
+    
+    # Specificity plot
+    data2plot <- as.data.frame(cbind((subjects.train), (pcc.eval$specificity)))
+    names(data2plot) <- c("subject", "specificity")
+    print(ggplot(data2plot, aes(subject, specificity)) + geom_point(size = 5))
+    # summary(t(pcc.eval$specificity))
+    
     return(list("accuracy" = accuracy, "sensitivity" = sensitivity, "specificity" = specificity))
     
 }
@@ -470,16 +615,44 @@ submission.csv <- function(predictions, template = "D:/GitHub/Kaggle/P300_Spelle
     write.csv(template, file = filename, row.names = FALSE)
 }
 
-data.trim <- function(data, time_range = c(-Inf, Inf)){
+data.trim <- function(data, time_range = c(-Inf, Inf), channels = 1:56){
     
     for(i in 1:length(data)){
         
         # Mask based on time
-        data[[i]] <- mask.df.time(data[[i]], time_range)
+        data[[i]] <- mask.time(data[[i]], time_range)
+        
+        # Mask based on channels
+        data[[i]] <- mask.channels(data = data[[i]], channels = channels)
         
     }
     
     return(data)
+}
+
+mask.channels <- function(data, channels){
+    
+    # Create a mask
+    mask = is.element(data$channel_label, channels)
+    
+    # Apply the mask
+    data.mask = mask.apply(data = data, mask = mask)
+    
+    # Return masked data
+    return(data.mask)
+    
+}
+
+mask.apply <- function(data, mask){
+    
+    # Apply the mask
+    data.mask = list(time_stamps = data[['time_stamps']][mask], 
+                     class_labels = data[['class_labels']], 
+                     sweeps = data[['sweeps']][,mask], 
+                     erp_correct = as.matrix(data[['erp_correct']][mask]), 
+                     erp_incorrect = as.matrix(data[['erp_incorrect']][mask]), 
+                     erp_unknown = as.matrix(data[['erp_unknown']][mask]), 
+                     channel_label = as.matrix(data[['channel_label']][mask]))
 }
 "
 Create a logical mask for a data frame.
@@ -488,22 +661,11 @@ Accepts key/value pairs, where each key is the name of a data frame field and ea
 value specifies the lower and upper bounds of that 
 
 "
-mask.df.time <- function(mylist, time_range){
+mask.time <- function(data, time_range){
     
-    mask <- mylist$time_stamps >= time_range[1] & mylist$time_stamps <= time_range[2]    
-    
-    # Get all names of dataframe, then apply logical mask to all fields.
-    df.names <- names(mylist)
-    mylist.mask <- list(time_stamps = mylist[['time_stamps']][mask], 
-                        class_labels = mylist[['class_labels']], 
-                        sweeps = mylist[['sweeps']][,mask], 
-                        erp_correct = as.matrix(mylist[['erp_correct']][mask]), 
-                        erp_incorrect = as.matrix(mylist[['erp_incorrect']][mask]), 
-                        erp_unknown = as.matrix(mylist[['erp_unknown']][mask]))
-    
-    # names(mylist.mask) <- names(mylist)
-    
-    return(mylist.mask)
+    mask <- data$time_stamps >= time_range[1] & data$time_stamps <= time_range[2]        
+        
+    return(mask.apply(data = data, mask = mask))
     
 }
 
@@ -688,6 +850,70 @@ concat.sweeps.chan.group <- function(data, number_of_channels = 56){
     return(data.concat)
 }
 
+##########
+"
+DESCRIPTION:
+
+concat.sweeps.trial.group combines all sweeps and class_labels into a single 
+subject data structure. This can then be manipulated to return 
+
+INPUT:
+
+    data:   subject data structure, as returned from import_eeg.rdata or similar
+
+    make.dataframe: returns the data as a set of sweeps with appended class labels.
+                    This proved useful when making models.
+    
+"
+concat.sweeps.trial.group <- function(data, make.dataframe = FALSE){
+    
+    # Loop through all subjects, concatenate sweeps and channel labels.
+    for(i in 1:length(data)){
+        
+        tsweeps = data[[i]]$sweeps
+        tclass_labels = as.matrix(data[[i]]$class_labels)
+        
+        if(i == 1){
+            sweeps = tsweeps
+            class_labels = tclass_labels
+        }
+        else{
+            sweeps = rbind(sweeps, tsweeps)            
+            class_labels = rbind(class_labels, tclass_labels)
+        }
+        
+    }
+    
+    # Create a return data structure
+    data.concat = data[1]
+    
+    # Replace sweeps and class_labels
+    data.concat[[1]]$sweeps = sweeps
+    data.concat[[1]]$class_labels = as.numeric(class_labels)
+    
+    # Update ERPs and the like
+    #   Probably not necessary for our applications, but better to keep things 
+    #   consistent as much as possible. This will also update time stamps and
+    #   the like. 
+    data.concat = update.data.subject(data.concat)
+    
+    # Return as a data frame or as a data structure?
+    if(make.dataframe){
+        
+        # Make the data frame
+        df = data.frame(data.concat[[1]]$sweeps, data.concat[[1]]$class_labels - 1)
+        
+        # Add in the class labels name (Type). Makes modeling easier
+        names(df)[ncol(df)] = 'Type'
+        
+        # Return the data frame
+        return(df)
+        
+    }
+    else{
+        return(data.concat)
+    }
+}
 ##########
 "
 DESCRIPTION:
@@ -972,6 +1198,8 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
     # Project each subject's data onto the specified PCs. Replace the
     for(i in 1:length(data.project)){        
         
+        # Give user some feedback so we know where we are. 
+        message(paste('Projecting subject', as.character(i), 'of', as.character(length(data.project))))
         data.project[[i]]$sweeps = pca.svd.project.sweeps(data = data.project[[i]]$sweeps, pc = pc, pc.index = pc.index, number_of_channels = number_of_channels)
          
         # Replace correct/incorrect/unknown ERPs
@@ -993,7 +1221,7 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
     
     # Plot the proportion of variance explained. Helps determine which components 
     # should be kept. Typically use a 95% cut off criterion.
-    qplot(x = 1:length(pc$d), y = cumsum(pc$d)/sum(pc$d) * 100)
+    print(qplot(x = 1:length(pc$d), y = cumsum(pc$d)/sum(pc$d) * 100))
     
     # Now, create a plot with the ERPs and difference waves for each component
     for(i in 1:nrow(erp_correct)){
@@ -1013,7 +1241,7 @@ pca.svd.screen <- function(data, pc, pc.index, number_of_channels = 56, plot.fla
             scale_x_continuous(breaks = seq(0, 1500, 100))
         
         # Make the plot
-        gg
+        print(gg)
     }
 }
 
@@ -1105,4 +1333,99 @@ update.data.time_stamps <- function(data, number_of_channels = 56){
     
     # Return the updated data structure
     return(data)
+}
+
+##########
+"
+DESCRIPTION:
+
+gfp.sweeps calculates the global field power (GFP). CWB wanted to look at GFP
+since it may be a more robust and computationally efficient data reduction 
+routine. I also think it should capture the discriminative information well. 
+
+Let's give it a whirl!
+
+INPUT:
+
+    data:   sweeps matrix, N x (T*C) where N is the number of sweeps, T is the 
+            number of time points per epoch (sweep), and C is the number of 
+            channels.  
+
+    number_of_channels: number of channels!
+
+OUTPUT:
+
+    gfp:    N x T matrix, where N is the number of sweeps and is the number of
+            time points. Each value is the GFP (spatial standad deviation) at 
+            the corresponding time point.
+
+Christopher W Bishop
+2/15
+"
+
+gfp.sweeps <- function(data, number_of_channels = 56){
+    
+    # Loop through all sweeps and calculate the GFP.
+    for(i in 1:nrow(data)){
+        
+        # Convert sweep into a channel x time point matrix
+        sweep = erpbyrow2chan(data = data[i,], number_of_channels = number_of_channels )
+        
+        # compute standard deviation for each time point
+        tgfp = apply(sweep, 2, sd)
+        
+        # append sweep
+        if(i == 1){
+            gfp = tgfp
+        }
+        else{
+            gfp = rbind(gfp, tgfp)
+        }
+        
+    }
+    
+    # Return the GFP time series. 
+    return(gfp)
+}
+
+##########
+"
+DESCRIPTION:
+
+gfp.subjects converts time series in subject data structure to a time series of GFP
+values.
+
+INPUT:
+
+    data:   subject data structure returned from import_eeg.rdata
+
+    number_of_channels: You know by now
+
+OUTPUT:
+
+    data:   updated data with sweeps converted to GFP. Let's hope this is a good 
+            data reduction step. 
+
+Christopher W Bishop
+2/15
+"
+
+gfp.subjects <- function(data, number_of_channels = 56){
+    
+    # Loop through each subject's data, replace sweeps with GFP
+    for(i in 1:length(data)){
+        
+        # Update user so we know what's going on
+        message(paste('Converting subject', as.character(i), 'of', as.character(length(data)), ' to GFP.'))
+        
+        # Convert sweeps to GFP
+        data[[i]]$sweeps = gfp.sweeps(data = data[[i]]$sweeps, number_of_channels = number_of_channels)
+        
+        # Update subject structure
+        data[i] = update.data.subject(data = data[i], number_of_channels = number_of_channels)
+    }
+    
+    # Return the updated data structure
+    return(data)
+    
 }
