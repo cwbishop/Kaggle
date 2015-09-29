@@ -148,6 +148,10 @@ class OCRImage:
 		else:
 			tmp, thresh_image = cv2.threshold(self.image, threshold, 1, cv2.THRESH_BINARY_INV)
 
+		
+		# Need to invert the sign. Can't seem to get that right, despite setting thresh_binary_inv
+		thresh_image = (thresh_image-1)*-1 # this makes all zeros 1, and all ones 0
+
 		return(OCRImage(thresh_image))
 
 	def laplacian(self):
