@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 import os # to list files ina  directory
 from os import path
 import pandas as pd
+import gzip
 
 # Use this as matplotlib backend Qt4Agg
 # train = 'train/14.png'
@@ -201,18 +202,19 @@ class OCRImage:
 		file_number = self.file_name.split('/')[1].split('.png')[0]
 		row_labels = [str(y) for y in range(1, self.get_shape()[0]+1)]
 
+		
 		# labels = ['{0}_{1}_'.format(file_number, i) for i in row_labels]
 
-		for col in range(self.get_shape()[1]):
+		# for col in range(self.get_shape()[1]):
 			# row_labels = [str(y) for y in 1:self.get_shape()[0]]
-			labels = ['{0}_{1}_{2}'.format(file_number, i, col+1) for i in row_labels]
+		#	labels = ['{0}_{1}_{2}'.format(file_number, i, col+1) for i in row_labels]
 
 			# Make a data frame
-			entry = pd.DataFrame(data={'value': self.image[:,col]},
-								 index=labels)
+		#	entry = pd.DataFrame(data={'value': self.image[:,col]},
+		#						 index=labels)
 
 			# Append to growing data frame
-			df = df.append(entry)
+		#	df = df.append(entry)
 			
 			# Grab the column we need
 		# for column in range(self.get_shape()[1]):
@@ -377,6 +379,19 @@ class ImageList:
 
 		return threshold_list
 
+	def to_gzip(self, filename):
+		submission = gzip.open(filename, 'wt')
+
+		submission.write('id,value\n')
+		
+		for image_num in range(len(self.image)):
+			file_number = self.image[image_num].file_name.split('/')[1].split('.png')[0]
+			print self.image[image_num].file_name
+
+			for j in range(self.image[image_num].get_shape()[1]):
+				for i in range(self.image[image_num].get_shape()[0]):
+					submission.write('{}_{}_{},{}\n'.format(file_number, i+1, j+1, self.image[image_num].image[i,j]))
+	
 	def to_csv(self, filename):
 		"""
 		Takes image list and exports to a CSV file
@@ -386,6 +401,7 @@ class ImageList:
 		Converts to pandas data frame
 		"""
 
+		
 		# Convert each image to a pandas data frame and append them
 		df = pd.DataFrame()
 		for i in range(len(self.image)):
