@@ -144,9 +144,9 @@ class OCRImage:
 
 		# return(OCRImage(thresh_mask))
 		if otsu:
-			tmp, thresh_image = cv2.threshold(self.image, threshold, 1, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+			tmp, thresh_image = cv2.threshold(self.image, threshold, 1, cv2.THRESH_BINARY_INV+cv2.THRESH_OTSU)
 		else:
-			tmp, thresh_image = cv2.threshold(self.image, threshold, 1, cv2.THRESH_BINARY)
+			tmp, thresh_image = cv2.threshold(self.image, threshold, 1, cv2.THRESH_BINARY_INV)
 
 		return(OCRImage(thresh_image))
 
@@ -194,7 +194,7 @@ class OCRImage:
 
 		# labels = ['{0}_{1}_'.format(file_number, i) for i in row_labels]
 
-		for col in range(self.get_shape()[0]):
+		for col in range(self.get_shape()[1]):
 			# row_labels = [str(y) for y in 1:self.get_shape()[0]]
 			labels = ['{0}_{1}_{2}'.format(file_number, i, col+1) for i in row_labels]
 
@@ -204,7 +204,7 @@ class OCRImage:
 
 			# Append to growing data frame
 			df = df.append(entry)
-
+			
 			# Grab the column we need
 		# for column in range(self.get_shape()[1]):
 		# 	# for row in range(self.get_shape()[0]):
@@ -213,6 +213,9 @@ class OCRImage:
 		# 							 index=[file_number + '_' + str(row) + '_' + str(column)])
 		# 		df = df.append(entry)
 
+		if np.prod(df.shape) != np.prod(self.get_shape()):
+			print 'Error in: ' + self.file_name
+			print self.get_shape(), df.shape
 		return(df)
 
 	#################
