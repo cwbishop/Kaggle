@@ -150,7 +150,12 @@ class OCRImage:
 
 		
 		# Need to invert the sign. Can't seem to get that right, despite setting thresh_binary_inv
-		thresh_image = (thresh_image-1)*-1 # this makes all zeros 1, and all ones 0
+		one_mask = thresh_image==1
+		zero_mask = thresh_image==0
+		thresh_image[one_mask]=0
+		thresh_image[zero_mask]=1
+
+		# thresh_image = (thresh_image-1)*-1 # this makes all zeros 1, and all ones 0
 
 		return(OCRImage(thresh_image))
 
