@@ -64,6 +64,18 @@ class OCRImage:
 	#################
 	# Data processing
 	#################
+	def normalize(self, max_val=255):
+		"""
+		Normalizes image values by max_val (default=255)
+		"""
+		return(OCRImage(self.image/max_val))
+
+	def apply_mask(self, mask):
+		"""
+		Applies a binary mask to the image data
+		Proved useful when using thresholded images to detect characters
+		"""
+		
 	def canny_edge(self, min_val, max_val):
 		""" Returns an image object with canny edges """
 		canny_image = cv2.Canny(self.image, min_val, max_val)
