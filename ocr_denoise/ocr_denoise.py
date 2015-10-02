@@ -10,20 +10,20 @@ import gzip
 # train = 'train/14.png'
 # train_clean = 'train_cleaned/14.png'
 
-train_dirty = os.listdir('train')
-train_dirty = ['train/{0}'.format(i) for i in train_dirty]
-train_dirty = [f for f in train_dirty if path.isfile(f)]
-train_clean = os.listdir('train_cleaned')
-train_clean = ['train_cleaned/{0}'.format(i) for i in train_clean]
-train_clean = [f for f in train_clean if path.isfile(f)]
+# train_dirty = os.listdir('train')
+# train_dirty = ['train/{0}'.format(i) for i in train_dirty]
+# train_dirty = [f for f in train_dirty if path.isfile(f)]
+# train_clean = os.listdir('train_cleaned')
+# train_clean = ['train_cleaned/{0}'.format(i) for i in train_clean]
+# train_clean = [f for f in train_clean if path.isfile(f)]
 test = os.listdir('test')
 test = ['test/{0}'.format(i) for i in test]
 test_clean = [f for f in test if path.isfile(f)]
 
+
 class OCRImage:
 
-
-	def __init__(self, data):
+	def __init__(self, data, file_name=''):
 		""" can be initialized as either a filename or an image """
 
 		if isinstance(data, basestring):
@@ -33,10 +33,13 @@ class OCRImage:
 
 		else:
 			self.image = data
-			self.file_name = "" # can make this smarter
+			self.file_name = file_name# can make this smarter
 
 		# Save original image dimensions
-		self.orig_shape = self.get_shape()
+		self.orig_shape = self.get_shape()		
+
+		# Normalize the image by 255
+		# self.image = self.image/255.0
 
 	def read_image(self, file_name):
 		""" Read in an image """
@@ -64,18 +67,29 @@ class OCRImage:
 	#################
 	# Data processing
 	#################
-	def normalize(self, max_val=255):
+	def normalize(self, max_val=255.0):
 		"""
 		Normalizes image values by max_val (default=255)
 		"""
-		return(OCRImage(self.image/max_val))
+		return(OCRImage(self.image/float(max_val)))
 
-	def apply_mask(self, mask):
+	def mask_to_orig(self, mask):
 		"""
-		Applies a binary mask to the image data
-		Proved useful when using thresholded images to detect characters
+		Converts a binary mask into an image containing original image values
+		at all "1" values in mask. Zeros in mask are replaced with ones
+
+		Proved useful when I had a mask showing where character pixels are located
 		"""
 		
+		# Replace all zeros in mask with ones
+		#	The ones in the mask will remain unchanged
+		ones_mask = mask == 1
+
+		mask_image = self.image.copy()
+		mask_image[ones_mask] = 255
+
+		return(OCRImage(mask_image))
+
 	def canny_edge(self, min_val, max_val):
 		""" Returns an image object with canny edges """
 		canny_image = cv2.Canny(self.image, min_val, max_val)
@@ -291,6 +305,17 @@ class ImageList:
 		""" Appends an image file for the indicated file """
 		self.image.append(OCRImage(data))
 
+	def mask_to_orig(self, mask):
+		"""
+		Wrapper for mask_to_orig
+		"""	
+		mask_image = ImageList([])
+
+		for i in range(len(self.image)):
+			mask_image.append(self.image[i].mask_to_orig(mask).image)
+
+		return(mask_image)
+
 	def plot_image(self, figure_size=(10, 10)):
 		""" 
 		Creates a subplot of images 
@@ -429,18 +454,6 @@ class ImageList:
 
 		return df
 		
-
-# Get list of training images
-class TrainPair(ImageList):
-	""" Loads clean/dirty images """
-
-	def __init__(self, file_name):
-		""" file_name: '14.png' """
-		self.image = list()
-		self.append('train_cleaned/' + file_name)
-		self.append('train/' + file_name)
-		
-		
 # Load the clean training data
 # clean = ImageList(train_clean)
 # dirty = ImageList(train_dirty)
@@ -451,8 +464,30 @@ test = ImageList(test)
 #	would also help?
 # lap_otsu = test.laplacian().threshold(0, True).to_csv('lap_otsu.csv') # applies adaptive threshold, writes to file
 
-	
-		# Apply an approach
-#	- Canny edge detection
-#	- Smoothing + threshold
-#	- 
+# Laplacian + OTSU mask
+def laplacian_otsu(image_list):
+
+	out = ImageList([])
+
+	# Create a mask for each image and apply it
+	for i in range(len(image_list.image)):
+		
+		# Print image names
+		print image_list.image[i].file_name
+
+		# Get the mask for this image
+		mask = image_list.image[i].laplacian().threshold(0, True).image
+
+		tmp_image = image_list.image[i].mask_to_orig(mask).normalize().image
+		tmp_file_name = image_list.image[i].file_name
+		
+		# Apply mask
+		out.append(tmp_image)
+		out.image[i].file_name = tmp_file_name
+
+	#mask_image = image_list.laplacian().otsu()
+
+	# Return masked images
+	return(out)
+
+	# 
